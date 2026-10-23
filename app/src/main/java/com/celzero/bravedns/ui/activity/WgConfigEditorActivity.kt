@@ -15,31 +15,32 @@
  */
 package com.celzero.bravedns.ui.activity
 
-import com.celzero.bravedns.util.Logger
-import com.celzero.bravedns.util.Logger.LOG_TAG_PROXY
-import com.celzero.bravedns.util.Logger.throwableToException
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
-import by.kirich1409.viewbindingdelegate.viewBinding
 import com.celzero.bravedns.R
 import com.celzero.bravedns.databinding.ActivityWgConfigEditorBinding
 import com.celzero.bravedns.service.PersistentState
 import com.celzero.bravedns.service.WireguardManager
 import com.celzero.bravedns.ui.BaseActivity
 import com.celzero.bravedns.ui.activity.WgConfigDetailActivity.Companion.INTENT_EXTRA_WG_TYPE
+import com.celzero.bravedns.util.Logger
+import com.celzero.bravedns.util.Logger.LOG_TAG_PROXY
+import com.celzero.bravedns.util.Logger.throwableToException
 import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.UIUtils.clipboardCopy
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.handleFrostEffectIfNeeded
+import com.celzero.bravedns.util.SnackbarHelper.applySystemBarEdgeInsets
 import com.celzero.bravedns.wireguard.Config
 import com.celzero.bravedns.wireguard.WgInterface
 import com.celzero.bravedns.wireguard.util.ErrorMessages
 import com.celzero.firestack.backend.Backend
+import dev.androidbroadcast.vbpd.viewBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,6 +69,7 @@ class WgConfigEditorActivity : BaseActivity(R.layout.activity_wg_config_editor) 
     override fun onCreate(savedInstanceState: Bundle?) {
         theme.applyStyle(Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme), true)
         super.onCreate(savedInstanceState)
+        b.root.applySystemBarEdgeInsets()
 
         handleFrostEffectIfNeeded(persistentState.theme)
 

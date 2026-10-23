@@ -61,7 +61,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
-import by.kirich1409.viewbindingdelegate.viewBinding
 import com.celzero.bravedns.R
 import com.celzero.bravedns.database.AppInfoRepository
 import com.celzero.bravedns.database.ConnectionTrackerDAO
@@ -104,6 +103,7 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import dev.androidbroadcast.vbpd.viewBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -378,12 +378,11 @@ class ServerSelectionFragment : Fragment(R.layout.fragment_server_selection),
         val fabMarginPx = (16f * density + 0.5f).toInt()
 
         ViewCompat.setOnApplyWindowInsetsListener(b.root) { _, insets ->
-            val navBarBottom  = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            val navViewHeight = requireActivity().findViewById<View>(R.id.nav_view)?.height ?: 0
-            val fabBottom = navBarBottom + navViewHeight + fabMarginPx
-            Logger.d(LOG_TAG_UI, "$TAG.onViewCreated: navBarBottom=$navBarBottom, navViewHeight=$navViewHeight, fabBottom=$fabBottom")
+            val navBarBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val fabBottom = navBarBottom + fabMarginPx
+            Logger.d(LOG_TAG_UI, "$TAG.onViewCreated: navBarBottom=$navBarBottom, fabBottom=$fabBottom")
 
-            // Apply margins to both FABs so they clear nav bar + bottom nav.
+            // Apply margins to both FABs so they clear the nav bar inset.
             listOf(b.fabStopProxy, b.fabStartProxy).forEach { fab ->
                 (fab.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.let { lp ->
                     lp.bottomMargin = fabBottom
