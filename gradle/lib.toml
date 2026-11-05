@@ -29,7 +29,6 @@ glideCompiler = "5.0.9"
 shimmer = "0.5.0"
 koin = "4.2.2"
 krate = "2.0.0"
-viewbinding = "2.0.4"
 work = "2.11.2"
 ipaddress = "5.6.2"
 junit = "4.13.2"
@@ -61,6 +60,7 @@ firebaseBom = "34.18.0"
 benchmarkMacroJunit4 = "1.3.3"
 uiautomator = "2.3.0"
 ksp = "2.3.9"
+viewbinding = "2.0.4"
 
 [libraries]
 googleGmsGoogleServices = { module = "com.google.gms:google-services", version.ref = "googleServices" }
@@ -100,7 +100,6 @@ facebookShimmerShimmer = { module = "com.facebook.shimmer:shimmer", version.ref 
 insertKoinKoinCore = { module = "io.insert-koin:koin-core", version.ref = "koin" }
 insertKoinKoinAndroid = { module = "io.insert-koin:koin-android", version.ref = "koin" }
 huAutsoftKrate = { module = "hu.autsoft:krate", version.ref = "krate" }
-devAndroidbroadcastVbpd = { module = "dev.androidbroadcast.vbpd:vbpd", version.ref = "viewbinding" }
 androidxWorkWorkRuntimeKtx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 githubSeancfoleyIpaddress = { module = "com.github.seancfoley:ipaddress", version.ref = "ipaddress" }
 junitJunit = { module = "junit:junit", version.ref = "junit" }
@@ -156,6 +155,12 @@ googleFirebaseFirebaseCrashlytics = { module = "com.google.firebase:firebase-cra
 googleFirebaseFirebaseCrashlyticsNdk = { module = "com.google.firebase:firebase-crashlytics-ndk" }
 androidxBenchmarkBenchmarkMacroJunit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmarkMacroJunit4" }
 androidxTestUiautomatorUiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
+
+androidxFragmentFragmentCompose = { module = "androidx.fragment:fragment-compose", version.ref = "fragmentKtx" }
+androidxComposeUiTestJunit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+androidxComposeUiTestManifest = { module = "androidx.compose.ui:ui-test-manifest" }
+nlDionsegijnKonfettiCompose = { module = "nl.dionsegijn:konfetti-compose", version.ref = "konfettiXml" }
+devAndroidbroadcastVbpd = { module = "dev.androidbroadcast.vbpd:vbpd", version.ref = "viewbinding" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
