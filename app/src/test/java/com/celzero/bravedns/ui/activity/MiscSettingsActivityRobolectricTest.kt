@@ -19,6 +19,7 @@ import com.celzero.bravedns.database.Severity
 import com.celzero.bravedns.scheduler.WorkScheduler
 import com.celzero.bravedns.service.EventLogger
 import com.celzero.bravedns.service.PersistentState
+import com.celzero.bravedns.ui.bottomsheet.PcapFilesBottomSheet
 import com.celzero.bravedns.ui.bottomsheet.TaskerAutomationBottomSheet
 import com.celzero.bravedns.ui.LauncherSwitcher
 import com.celzero.bravedns.ui.compose.networksettings.MiscSettingsState
@@ -207,6 +208,20 @@ class MiscSettingsActivityRobolectricTest {
         launch(); node(id).performScrollTo().assertIsEnabled(); openDialog(id, title)
         node(id).assertIsNotEnabled()
     }
+    // The PCAP row opens PcapFilesBottomSheet (mode picker + capture-file list) rather than a
+    // NetworkNativeDialog; these helpers assert that sheet contract instead.
+    private val pcapSheetTag = PcapFilesBottomSheet::class.java.simpleName
+    private fun pcapSheets() = host().supportFragmentManager.fragments.filterIsInstance<PcapFilesBottomSheet>()
+    private fun openPcapSheet(): PcapFilesBottomSheet {
+        click("settings_activity_pcap_rl")
+        host().supportFragmentManager.executePendingTransactions()
+        compose.waitForIdle()
+        val sheet = host().supportFragmentManager.findFragmentByTag(pcapSheetTag)
+        assertTrue("PcapFilesBottomSheet must be shown", sheet is PcapFilesBottomSheet)
+        sheet as PcapFilesBottomSheet
+        assertTrue("The sheet's dialog must be open", requireNotNull(sheet.dialog).isShowing)
+        return sheet
+    }
     private fun destroyWithDialog(id: String, title: Int) {
         launch(); val window = openDialog(id, title)
         requireNotNull(controller).pause().stop().destroy()
@@ -307,10 +322,11 @@ class MiscSettingsActivityRobolectricTest {
         launch(); click("settings_activity_app_notification_persistent_switch")
         verify(exactly = 1) { persistent.persistentNotification = true }; verifyLog("Persistent notification set to true")
     }
-    @Test fun pcapRl_click_createsAlertDialog() { launch(); openDialog("settings_activity_pcap_rl", R.string.settings_pcap_dialog_title) }
+    @Test fun pcapRl_click_createsAlertDialog() { launch(); openPcapSheet(); assertEquals(1, pcapSheets().size) }
     @Test fun pcapDialog_dismiss_closesWithoutCrash() {
-        launch(); val window = openDialog("settings_activity_pcap_rl", R.string.settings_pcap_dialog_title)
-        window.dismiss(); assertFalse(window.isShowing); verify { events wasNot Called }
+        launch(); val sheet = openPcapSheet(); val window = requireNotNull(sheet.dialog)
+        sheet.dismiss(); host().supportFragmentManager.executePendingTransactions()
+        assertFalse(window.isShowing); assertTrue(pcapSheets().isEmpty()); verify { events wasNot Called }
     }
     @Test fun themeRl_click_createsAlertDialog() { launch(); openDialog("settings_activity_theme_rl", R.string.settings_theme_dialog_title) }
     @Test fun notificationRl_click_createsAlertDialog() { launch(); openDialog("settings_activity_notification_rl", R.string.settings_notification_dialog_title) }
@@ -361,11 +377,20 @@ class MiscSettingsActivityRobolectricTest {
     @Test fun displayAppThemeUi_systemDefault_showsTheme1Text() { launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_1), substring = true) }
     @Test fun displayAppThemeUi_light_showsTheme2Text() { theme = 1; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_2), substring = true) }
     @Test fun displayAppThemeUi_dark_showsTheme3Text() { theme = 2; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_3), substring = true) }
-    @Test fun pcapRl_afterClick_isDisabledImmediately() { assertDisabledAfterClick("settings_activity_pcap_rl", R.string.settings_pcap_dialog_title) }
+    @Test fun pcapRl_afterClick_isDisabledImmediately() {
+        launch(); node("settings_activity_pcap_rl").performScrollTo().assertIsEnabled(); openPcapSheet()
+        node("settings_activity_pcap_rl").assertIsNotEnabled()
+    }
     @Test fun themeRl_afterClick_isDisabledImmediately() { assertDisabledAfterClick("settings_activity_theme_rl", R.string.settings_theme_dialog_title) }
     @Test fun notificationRl_afterClick_isDisabledImmediately() { assertDisabledAfterClick("settings_activity_notification_rl", R.string.settings_notification_dialog_title) }
     @Test fun goLogRl_afterClick_isDisabledImmediately() { assertDisabledAfterClick("settings_go_log_rl", R.string.settings_go_log_heading) }
-    @Test fun pcapDialog_activityDestroyedWhileShowing_doesNotCrash() { destroyWithDialog("settings_activity_pcap_rl", R.string.settings_pcap_dialog_title) }
+    @Test fun pcapDialog_activityDestroyedWhileShowing_doesNotCrash() {
+        launch(); openPcapSheet()
+        requireNotNull(controller).pause().stop().destroy()
+        assertTrue(host().isDestroyed)
+        assertEquals(Lifecycle.State.DESTROYED, host().lifecycle.currentState)
+        verify { events wasNot Called }
+    }
     @Test fun themeDialog_activityDestroyedWhileShowing_doesNotCrash() { destroyWithDialog("settings_activity_theme_rl", R.string.settings_theme_dialog_title) }
     @Test fun notificationDialog_activityDestroyedWhileShowing_doesNotCrash() { destroyWithDialog("settings_activity_notification_rl", R.string.settings_notification_dialog_title) }
     @Test fun setFirebaseUserId_withValidToken_doesNotThrow() { launch(); host().setFirebaseUserId("synthetic-token"); verify(exactly = 1) { FirebaseErrorReporting.setUserId("synthetic-token") } }
@@ -376,9 +401,10 @@ class MiscSettingsActivityRobolectricTest {
         assertTrue(themeChanged()); node("settings_activity_enable_logs_rl").assertExists()
     }
     @Test fun pcapRl_rapidDoubleClick_onlyOneDialogCreated() {
-        launch(); click("settings_activity_pcap_rl"); val first = dialog()
+        launch(); val first = openPcapSheet()
         node("settings_activity_pcap_rl").assertIsNotEnabled().performClick()
-        assertSame(first, ShadowDialog.getLatestDialog())
+        host().supportFragmentManager.executePendingTransactions()
+        assertEquals(listOf(first), pcapSheets())
         assertEquals(1, ShadowDialog.getShownDialogs().count { it.isShowing })
     }
     @Test fun enableLogsSwitch_initialState_trueWhenLogsEnabled() { logs = true; launch(); node("settings_activity_enable_logs_switch").assertIsOn(); verify(exactly = 0) { persistent.logsEnabled = any() } }

@@ -585,15 +585,9 @@ class WgConfigAdapterTest : KoinTest {
     @Test
     fun `test context initialization`() {
         assertNotNull("Context should not be null", context)
-        // Fix the context assertion to be more lenient
-        val packageName = context.packageName
-        assertTrue(
-            "Expected valid package name, got: $packageName",
-            packageName.isNotEmpty() &&
-                (packageName.contains("test") ||
-                    packageName.contains("android") ||
-                    packageName == "org.robolectric.default")
-        )
+        // With unitTests.isIncludeAndroidResources = true, Robolectric loads the merged manifest,
+        // so the context reports the variant's real applicationId, not a robolectric default.
+        assertEquals(com.celzero.bravedns.BuildConfig.APPLICATION_ID, context.packageName)
     }
 
     // Remove the problematic RouterStats tests that are causing native library issues
