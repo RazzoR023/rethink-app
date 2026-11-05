@@ -139,7 +139,7 @@ class AppInfoActivityTest {
             viewModel { AppInfoViewModel(appDao) }
             viewModel { CustomIpViewModel(ipDao) }
             viewModel { CustomDomainViewModel(domainDao) }
-            viewModel { AppConnectionsViewModel(connectionDao, rethinkDao, statsDao) }
+            viewModel { AppConnectionsViewModel(connectionDao, rethinkDao, statsDao, mockk<com.celzero.bravedns.service.LogActivityAggregator>(relaxed = true)) }
         }) }
         // Install log sinks BEFORE FirewallManager's first reference: its empty startup logs cannot
         // fall through to VpnController/console storage. Logger has only lazy injected properties.
