@@ -304,7 +304,7 @@ class AppIpRulesBottomSheet : BaseBottomSheetDialogFragment(), WireguardListBtmS
                 }
                 return@io
             }
-            IpRulesManager.addIpRule(uid, ip, null, status, proxyId = "", proxyCC = "")
+            IpRulesManager.addIpRule(uid, ip, null, status)
         }
         logEvent("IP Rule set to ${status.name} for IP: $ipAddress, UID: $uid")
     }

@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Shared helper for the DEBUG-only "Import Rules" feature used by
- * [CustomIpFragment] and [CustomDomainFragment].
+ * the rules screen (ui/compose/rules/CustomRuleActions).
  *
  * Responsibilities:
  *  1. Parse a plain-text file (one rule per line, '#' comments, blank lines skipped).

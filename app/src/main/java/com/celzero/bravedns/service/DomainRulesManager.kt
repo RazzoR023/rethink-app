@@ -40,14 +40,34 @@ import java.util.regex.Pattern
 
 object DomainRulesManager : KoinComponent {
 
-    private val db by inject<CustomDomainRepository>()
+    private val injectedDb by inject<CustomDomainRepository>()
+    private val nativeTrie: RadixTree by lazy { Backend.newRadixTree() }
+    private val nativeTrustedTrie: RadixTree by lazy { Backend.newRadixTree() }
 
-    private val trie: RadixTree by lazy { Backend.newRadixTree() }
+    // test seams: unit tests swap in a fake repository and in-memory tries (overrideForTest)
+    @Volatile private var dbOverride: CustomDomainRepository? = null
+    @Volatile private var trieOverride: RadixTree? = null
+    @Volatile private var trustedTrieOverride: RadixTree? = null
+
+    private val db: CustomDomainRepository get() = dbOverride ?: injectedDb
+
+    private val trie: RadixTree get() = trieOverride ?: nativeTrie
     // fixme: find a better way to handle trusted domains without using two data structures
     // map to store the trusted domains with set of uids
     private val trustedMap = ConcurrentHashMap<String, Set<Int>>()
     // even though we have trustedMap, we need to keep the trie for wildcard matching
-    private val trustedTrie: RadixTree by lazy { Backend.newRadixTree() }
+    private val trustedTrie: RadixTree get() = trustedTrieOverride ?: nativeTrustedTrie
+
+    /** Unit tests only: use [repo] and the given in-memory tries; nulls restore the real ones. */
+    @androidx.annotation.VisibleForTesting
+    internal fun overrideForTest(repo: CustomDomainRepository?, trie: RadixTree?, trustedTrie: RadixTree?) {
+        dbOverride = repo
+        trieOverride = trie
+        trustedTrieOverride = trustedTrie
+        trustedMap.clear()
+        selectedCCs.clear()
+        mayHaveProxyRules = false
+    }
 
     // regex to check if url is valid wildcard domain
     // valid wildcard domain: *.eu, *.com, *.example.com, *.example.co.in, *.do-main.com
@@ -354,12 +374,33 @@ object DomainRulesManager : KoinComponent {
         return res
     }
 
-    suspend fun trust(cd: CustomDomain) {
-        cd.status = Status.TRUST.id
+    /*
+     * Status changes (trust / block / noRule / changeStatus / addDomainRule / updateDomainRule)
+     * never touch a rule's proxy (proxyId / proxyCC): the stored proxy is kept, even when the
+     * caller holds a stale CustomDomain or builds a new one. A proxy is set or cleared only
+     * through setProxy / clearProxy / setCC, or by passing proxyId explicitly.
+     */
+
+    suspend fun trust(cd: CustomDomain) = setStatus(cd, Status.TRUST)
+
+    suspend fun block(cd: CustomDomain) = setStatus(cd, Status.BLOCK)
+
+    suspend fun noRule(cd: CustomDomain) = setStatus(cd, Status.NONE)
+
+    private suspend fun setStatus(cd: CustomDomain, status: Status) {
+        keepStoredProxy(cd)
+        cd.status = status.id
         cd.modifiedTs = Calendar.getInstance().timeInMillis
         dbInsertOrUpdate(cd)
         updateTrie(cd)
-        maybeUpdateTrustedMap(cd.uid, cd.domain, Status.TRUST)
+        maybeUpdateTrustedMap(cd.uid, cd.domain, status)
+    }
+
+    // copies the stored rule's proxy onto [cd] (no-op when the rule isn't stored yet)
+    private suspend fun keepStoredProxy(cd: CustomDomain) {
+        val stored = db.getCustomDomain(cd.uid, cd.domain) ?: return
+        cd.proxyId = stored.proxyId
+        cd.proxyCC = stored.proxyCC
     }
 
     suspend fun changeStatus(
@@ -369,41 +410,75 @@ object DomainRulesManager : KoinComponent {
         type: DomainType,
         status: Status
     ) {
-        val cd = mkCustomDomain(domain, uid, ips, type, status.id)
-        dbInsertOrUpdate(cd)
-        updateTrie(cd)
-        maybeUpdateTrustedMap(uid, domain, status)
+        upsert(domain, uid, ips, type, status, proxyId = null)
     }
 
     suspend fun block(domain: String, uid: Int, ips: String = "", type: DomainType) {
-        val cd = mkCustomDomain(domain, uid, ips, type, Status.BLOCK.id)
-        dbInsertOrUpdate(cd)
-        updateTrie(cd)
-        maybeUpdateTrustedMap(uid, domain, Status.BLOCK)
+        upsert(domain, uid, ips, type, Status.BLOCK, proxyId = null)
     }
 
-    suspend fun block(cd: CustomDomain) {
-        cd.status = Status.BLOCK.id
-        cd.modifiedTs = Calendar.getInstance().timeInMillis
-        dbInsertOrUpdate(cd)
-        updateTrie(cd)
-        maybeUpdateTrustedMap(cd.uid, cd.domain, Status.BLOCK)
+    /**
+     * Adds (or overwrites) the rule for [d] / [uid] with [status]. [proxyId]: null keeps the
+     * stored rule's proxy (none for a new rule), "" clears it, anything else sets it.
+     */
+    suspend fun addDomainRule(
+        d: String,
+        status: Status,
+        type: DomainType,
+        uid: Int,
+        proxyId: String? = null
+    ) {
+        upsert(d, uid, "", type, status, proxyId)
     }
 
-    suspend fun noRule(cd: CustomDomain) {
-        cd.status = Status.NONE.id
-        cd.modifiedTs = Calendar.getInstance().timeInMillis
+    private suspend fun upsert(
+        domain: String,
+        uid: Int,
+        ips: String,
+        type: DomainType,
+        status: Status,
+        proxyId: String?
+    ): CustomDomain {
+        val stored = db.getCustomDomain(uid, domain)
+        val cd = mkCustomDomain(
+            domain, uid, ips, type, status.id,
+            proxyId = proxyId ?: stored?.proxyId.orEmpty(),
+            proxyCC = stored?.proxyCC.orEmpty()
+        )
         dbInsertOrUpdate(cd)
         updateTrie(cd)
-        maybeUpdateTrustedMap(cd.uid, cd.domain, Status.NONE)
+        maybeUpdateTrustedMap(uid, domain, status)
+        return cd
     }
 
-    suspend fun addDomainRule(d: String, status: Status, type: DomainType, uid: Int) {
-        val cd = mkCustomDomain(d, uid, "", type, status.id)
-        dbInsertOrUpdate(cd)
-        updateTrie(cd)
-        maybeUpdateTrustedMap(uid, d, status)
+    /**
+     * Routes the rule of [cd] (its uid and domain) via [proxyId]; "" clears it (no override).
+     * The stored status is kept; a domain without a rule gets one with [cd]'s status (so a
+     * rule can route via a proxy without blocking or trusting). Takes effect immediately for
+     * new connections. Returns the stored rule.
+     */
+    suspend fun setProxy(cd: CustomDomain, proxyId: String): CustomDomain {
+        val stored = db.getCustomDomain(cd.uid, cd.domain)
+        val next = CustomDomain(
+            cd.domain,
+            cd.uid,
+            stored?.ips ?: cd.ips,
+            stored?.type ?: cd.type,
+            stored?.status ?: cd.status,
+            proxyId,
+            stored?.proxyCC ?: cd.proxyCC,
+            Calendar.getInstance().timeInMillis,
+            Constants.INIT_TIME_MS,
+            CustomDomain.getCurrentVersion()
+        )
+        dbInsertOrUpdate(next)
+        updateTrie(next)
+        maybeUpdateTrustedMap(next.uid, next.domain, Status.getStatus(next.status))
+        Logger.i(LOG_TAG_DNS, "setProxy: ${next.domain}(${next.uid}) -> '$proxyId'")
+        return next
     }
+
+    suspend fun clearProxy(cd: CustomDomain): CustomDomain = setProxy(cd, "")
 
     private fun maybeUpdateTrustedMap(uid: Int, domain: String, status: Status) {
         val d = domain.lowercase(Locale.ROOT)
@@ -427,18 +502,29 @@ object DomainRulesManager : KoinComponent {
         }
     }
 
+    /**
+     * Replaces [prevDomain] with a rule for [d]. [proxyId]: null keeps the previous rule's
+     * proxy (its proxyCC is always kept), "" clears it, anything else sets it.
+     */
     suspend fun updateDomainRule(
         d: String,
         status: Status,
         type: DomainType,
-        prevDomain: CustomDomain
+        prevDomain: CustomDomain,
+        proxyId: String? = null
     ) {
-        val cd = mkCustomDomain(d, prevDomain.uid, "", type, status.id)
+        val stored = db.getCustomDomain(prevDomain.uid, prevDomain.domain) ?: prevDomain
+        val cd = mkCustomDomain(
+            d, prevDomain.uid, "", type, status.id,
+            proxyId = proxyId ?: stored.proxyId,
+            proxyCC = stored.proxyCC
+        )
         dbUpdate(prevDomain, cd)
         removeFromTrie(prevDomain)
         removeIfInTrustedMap(prevDomain.uid, prevDomain.domain)
         updateTrie(cd)
-        maybeUpdateTrustedMap(cd.uid, cd.domain, Status.BLOCK)
+        // was always Status.BLOCK, so an edited trusted rule dropped out of the trusted map
+        maybeUpdateTrustedMap(cd.uid, cd.domain, status)
     }
 
     private suspend fun dbInsertOrUpdate(cd: CustomDomain) {
@@ -500,6 +586,12 @@ object DomainRulesManager : KoinComponent {
             removeIfInTrustedMap(cd.uid, cd.domain)
         }
         db.deleteRules(list)
+    }
+
+    /** Deletes every app-specific rule; the universal (all apps) rules stay. */
+    suspend fun deleteAllAppsRules() {
+        val apps = db.getAllCustomDomains().filter { it.uid != Constants.UID_EVERYBODY }
+        deleteRules(apps)
     }
 
     suspend fun deleteAllRules() {
@@ -579,20 +671,21 @@ object DomainRulesManager : KoinComponent {
     }
 
     suspend fun setCC(cd: CustomDomain, cc: String) {
+        val stored = db.getCustomDomain(cd.uid, cd.domain) ?: cd
         cd.proxyCC = cc
-        val newCd = CustomDomain(cd.domain, cd.uid, cd.ips, cd.type, cd.status, cd.proxyId, cc, cd.modifiedTs, 0L, cd.version)
+        val newCd = CustomDomain(stored.domain, stored.uid, stored.ips, stored.type, stored.status, stored.proxyId, cc, stored.modifiedTs, 0L, stored.version)
         Logger.d(LOG_TAG_DNS, "setCC: updating domain: ${cd.domain} to cc: $cc")
-        db.update(cd, newCd)
+        dbInsertOrUpdate(newCd)
+        updateTrie(newCd)
+        if (cc.isNotEmpty()) selectedCCs.add(cc)
         Logger.i(LOG_TAG_DNS, "setCC: updated domain: ${cd.domain} to $cc")
-        rehydrateFromDB(cd.uid)
     }
 
+    @Deprecated("use setProxy", ReplaceWith("setProxy(cd, proxyId)"))
     suspend fun setProxyId(cd: CustomDomain, proxyId: String) {
-        cd.proxyId = proxyId
-        val newCd = CustomDomain(cd.domain, cd.uid, cd.ips, cd.type, cd.status, proxyId, cd.proxyCC, cd.modifiedTs, 0L, cd.version)
-        db.update(cd, newCd)
-        Logger.i(LOG_TAG_DNS, "setProxyId: updated domain: ${cd.domain} to $proxyId")
-        rehydrateFromDB(cd.uid)
+        val next = setProxy(cd, proxyId)
+        cd.proxyId = next.proxyId
+        cd.status = next.status
     }
 
     suspend fun tombstoneRulesByUid(oldUid: Int) {

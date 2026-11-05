@@ -1,83 +1,195 @@
 /* Copyright 2026 RethinkDNS and its authors. Licensed under Apache-2.0. */
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.celzero.bravedns.ui.compose.rules
 
-import com.celzero.bravedns.ui.compose.controls.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.*
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.celzero.bravedns.R
-import com.celzero.bravedns.database.CustomDomain
-import com.celzero.bravedns.database.CustomIp
-import com.celzero.bravedns.service.DomainRulesManager
-import com.celzero.bravedns.service.IpRulesManager.IpRuleStatus
-import com.celzero.bravedns.ui.compose.settings.SettingsCard
-import com.celzero.bravedns.ui.compose.themeColor
-import com.celzero.bravedns.util.Constants.Companion.UID_EVERYBODY
-import java.io.Serializable
+import com.celzero.bravedns.service.ProxyChoices
+import com.celzero.bravedns.ui.compose.design.ChoiceOption
+import com.celzero.bravedns.ui.compose.design.RethinkSpacing
+import com.celzero.bravedns.ui.compose.design.RuleProxyPickerSheet
+import com.celzero.bravedns.ui.compose.design.SettingRow
+import com.celzero.bravedns.ui.compose.design.SettingTrailing
+import com.celzero.bravedns.ui.compose.design.SettingsSection
+import com.celzero.bravedns.ui.compose.design.SingleChoiceList
+import com.celzero.bravedns.ui.compose.design.StatusChip
+import com.celzero.bravedns.ui.compose.design.displayDescription
+import com.celzero.bravedns.ui.compose.design.displayTitle
+import com.celzero.bravedns.ui.compose.design.toStatus
 
-@Composable internal fun StoredRuleDetails(item: Serializable, selected: Int, displayed: Int, modified: Long, onStatus: (Int) -> Unit, onDelete: () -> Unit) {
-    val domain = item is CustomDomain
-    RuleDetailsContent(domain, ruleUid(item), if (item is CustomDomain) item.domain else (item as CustomIp).ipAddress,
-        rememberRuleApp(ruleUid(item), domain, true), if (item is CustomIp && item.uid == UID_EVERYBODY) rememberRuleFlag(item) else null,
-        selected, displayed, modified, onStatus, onDelete)
+/*
+ * A rule's details, as a bottom sheet over the rules list: what it matches and for which app,
+ * its action (Trust / Block / None, or Bypass universal for universal IP rules) and its proxy
+ * ("Route via", independent of the action), plus Edit and Delete.
+ */
+
+@Composable
+internal fun RuleDetailsSheet(item: RuleItem, state: RulesScreenState, actions: CustomRuleActions) {
+    ModalBottomSheet(
+        onDismissRequest = { state.details = null },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        RuleDetailsContent(
+            item = item,
+            appName = appLabel(state, actions, item.uid),
+            proxies = state.proxies,
+            onAction = { actions.setAction(item, it) },
+            onRoute = { state.picker = PickerTarget.Rule(item) },
+            onEdit = { state.openEditor(item.kind, item) },
+            onDelete = { state.dialog = RulesDialog.ConfirmDelete(item) },
+            modifier = Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding(),
+        )
+    }
 }
-/** Presentation-only entry point for fake-content tests; no manager/service access. */
-@Composable internal fun RuleDetailsContent(domain: Boolean, uid: Int, title: String, app: RuleAppMetadata, flag: String?,
-    selected: Int, displayed: Int, modified: Long, onStatus: (Int) -> Unit, onDelete: () -> Unit) {
-    var deleteOpen by remember { mutableStateOf(false) }
-    Surface {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp).size(40.dp, 4.dp).alpha(0.5f).background(themeColor(R.attr.border)))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (flag != null) Text(flag, fontSize = 30.sp) else RuleAppIcon(app.icon)
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    SelectionContainer { Text(title, fontSize = 16.sp) }
-                    Text(app.name, fontSize = 12.sp)
+
+/** The sheet's content; stateless, for previews and tests. */
+@Composable
+internal fun RuleDetailsContent(
+    item: RuleItem,
+    appName: String,
+    proxies: List<ProxyChoices.Choice>?,
+    onAction: (RuleAction) -> Unit,
+    onRoute: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.fillMaxWidth().padding(bottom = RethinkSpacing.lg).testTag("rule_details"),
+        verticalArrangement = Arrangement.spacedBy(RethinkSpacing.lg),
+    ) {
+        Row(
+            Modifier.padding(horizontal = RethinkSpacing.screenGutter),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(RethinkSpacing.lg),
+        ) {
+            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { RuleLeading(item) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(RethinkSpacing.xxs)) {
+                SelectionContainer {
+                    Text(
+                        item.target,
+                        Modifier.semantics { heading() },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
-                IconButton({ deleteOpen = true }, Modifier.testTag("rule_detail_delete")) { Icon(painterResource(R.drawable.ic_delete_small), stringResource(R.string.lbl_delete), Modifier.size(24.dp).alpha(if (domain) .8f else 1f), tint = themeColor(R.attr.accentBad)) }
+                Text(appName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(changedLabel(item.modifiedTs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            SettingsCard(Modifier.padding(top = 16.dp), horizontalContentPadding = 12.dp) {
-                Column(Modifier.selectableGroup()) {
-                    Text(stringResource(if (domain) R.string.dc_custom_block_heading else R.string.lbl_ip_rules), style = MaterialTheme.typography.titleSmall)
-                    val options = if (domain) listOf(DomainRulesManager.Status.NONE.id to R.string.ci_no_rule, DomainRulesManager.Status.BLOCK.id to R.string.ci_block, DomainRulesManager.Status.TRUST.id to R.string.ci_trust_rule)
-                    else listOf(IpRuleStatus.NONE.id to R.string.ci_no_rule, IpRuleStatus.BLOCK.id to R.string.ci_block,
-                        if (uid == UID_EVERYBODY) IpRuleStatus.BYPASS_UNIVERSAL.id to R.string.ci_bypass_universal else IpRuleStatus.TRUST.id to R.string.ci_trust_rule)
-                    options.forEach { (status, label) ->
-                        Row(Modifier.fillMaxWidth().selectable(selected == status, role = Role.RadioButton, onClick = { onStatus(status) }).padding(vertical = 8.dp).testTag("rule_status_$status"), verticalAlignment = Alignment.CenterVertically) {
-                            RuleStatusBadge(domain, status, selected == status, detail = true)
-                            Text(stringResource(label), Modifier.weight(1f).padding(horizontal = 12.dp), fontSize = 14.sp)
-                            OriginalRadioButton(if (domain) "bottom_sheet_custom_domains:" + when (status) {
-                                DomainRulesManager.Status.NONE.id -> "custom_domain_rb_no_rule"
-                                DomainRulesManager.Status.BLOCK.id -> "custom_domain_rb_block"
-                                else -> "custom_domain_rb_whitelist"
-                            } else "bottom_sheet_custom_ips:" + when (status) {
-                                IpRuleStatus.NONE.id -> "custom_ip_rb_no_rule"
-                                IpRuleStatus.BLOCK.id -> "custom_ip_rb_block"
-                                IpRuleStatus.BYPASS_UNIVERSAL.id -> "custom_ip_rb_bypass_univ"
-                                else -> "custom_ip_rb_bypass_app"
-                            }, selected == status, null)
-                        }
-                    }
-                    Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) { RuleStatusDescription(domain, displayed, modified) }
-                }
+        }
+
+        SettingsSection(title = stringResource(R.string.rules_section_action)) {
+            val options = RulesLogic.actionOptions(item.kind, item.uid, item.action).map { a ->
+                ChoiceOption(a, stringResource(actionLabel(a)), stringResource(actionDescription(a)))
+            }
+            SingleChoiceList(options, item.action, onAction, Modifier.testTag("rule_details_action"))
+        }
+
+        SettingsSection(title = stringResource(R.string.rules_section_proxy)) {
+            RouteViaRow(item.proxyId, proxies, onRoute, Modifier.testTag("rule_details_route"))
+            if (RulesLogic.proxyIgnored(item.action, item.proxyId)) {
+                Text(
+                    stringResource(R.string.rules_proxy_ignored_note),
+                    Modifier.padding(horizontal = RethinkSpacing.screenGutter, vertical = RethinkSpacing.sm),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = RethinkSpacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(RethinkSpacing.sm),
+        ) {
+            OutlinedButton(onEdit, Modifier.weight(1f).testTag("rule_details_edit"), contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+                Icon(Icons.Filled.Edit, null, Modifier.size(ButtonDefaults.IconSize))
+                Text(stringResource(R.string.rules_edit), Modifier.padding(start = ButtonDefaults.IconSpacing))
+            }
+            OutlinedButton(
+                onDelete,
+                Modifier.weight(1f).testTag("rule_details_delete"),
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) {
+                Icon(Icons.Filled.Delete, null, Modifier.size(ButtonDefaults.IconSize))
+                Text(stringResource(R.string.rules_delete), Modifier.padding(start = ButtonDefaults.IconSpacing))
             }
         }
     }
-    if (deleteOpen) RuleConfirmDialog(stringResource(if (domain) R.string.cd_remove_dialog_title else R.string.univ_firewall_dialog_title),
-        stringResource(if (domain) R.string.cd_remove_dialog_message else R.string.univ_firewall_dialog_message), stringResource(R.string.lbl_delete),
-        { deleteOpen = false; onDelete() }, { deleteOpen = false }, { deleteOpen = false })
+}
+
+/** "Route via": the rule's proxy (or no override) with live status; opens the picker. */
+@Composable
+internal fun RouteViaRow(proxyId: String, proxies: List<ProxyChoices.Choice>?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val choice = RulesLogic.proxyChoice(proxyId, proxies)
+    SettingRow(
+        title = stringResource(R.string.rules_route_via_title),
+        modifier = modifier,
+        supportingText = if (choice == null) stringResource(R.string.proxy_picker_no_override)
+            else listOfNotNull(choice.displayTitle(), choice.displayDescription()).joinToString(" · "),
+        icon = Icons.Filled.Route,
+        onClick = onClick,
+    ) {
+        if (choice != null && proxies != null) StatusChip(choice.health.toStatus())
+        SettingTrailing.Chevron()
+    }
+}
+
+/** The rule proxy picker, for a stored rule (saved at once) or the editor's draft. */
+@Composable
+internal fun RulePickerHost(state: RulesScreenState, actions: CustomRuleActions) {
+    when (val target = state.picker) {
+        null -> Unit
+        is PickerTarget.Rule -> RuleProxyPickerSheet(
+            currentProxyId = target.item.proxyId,
+            subject = target.item.target,
+            onSelect = { actions.setProxy(target.item, it) },
+            onDismiss = { state.picker = null },
+        )
+        PickerTarget.Draft -> {
+            val draft = state.draft
+            if (draft == null) {
+                state.picker = null
+            } else {
+                RuleProxyPickerSheet(
+                    currentProxyId = draft.proxyId,
+                    subject = draft.input.ifBlank { null },
+                    onSelect = { id -> state.updateDraft { it.copy(proxyId = id) } },
+                    onDismiss = { state.picker = null },
+                )
+            }
+        }
+    }
 }

@@ -55,6 +55,8 @@ fun <T> SingleChoiceList(
     selected: T?,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
+    /** row inset; 0 inside dialogs, which already pad their content */
+    horizontalPadding: androidx.compose.ui.unit.Dp = RethinkSpacing.screenGutter,
 ) {
     Column(modifier.fillMaxWidth().selectableGroup()) {
         options.forEach { option ->
@@ -69,7 +71,7 @@ fun <T> SingleChoiceList(
                         role = Role.RadioButton,
                         onClick = { onSelect(option.value) },
                     )
-                    .padding(horizontal = RethinkSpacing.screenGutter, vertical = RethinkSpacing.sm),
+                    .padding(horizontal = horizontalPadding, vertical = RethinkSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(RethinkSpacing.md),
             ) {

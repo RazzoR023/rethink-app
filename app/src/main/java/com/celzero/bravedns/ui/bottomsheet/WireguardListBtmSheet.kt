@@ -187,11 +187,11 @@ class WireguardListBtmSheet :
                 return@io
             }
             if (conf == null) {
-                DomainRulesManager.setProxyId(domain, "")
+                DomainRulesManager.setProxy(domain, "")
                 domain.proxyId = ""
             } else {
                 val id = ID_WG_BASE + conf.id
-                DomainRulesManager.setProxyId(domain, id)
+                DomainRulesManager.setProxy(domain, id)
                 domain.proxyId = id
             }
             val name = conf?.name ?: getString(R.string.settings_app_list_default_app)
@@ -214,11 +214,11 @@ class WireguardListBtmSheet :
                 return@io
             }
             if (conf == null) {
-                IpRulesManager.updateProxyId(ip, "")
+                IpRulesManager.setProxy(ip, "")
                 ip.proxyId = ""
             } else {
                 val id = ID_WG_BASE + conf.id
-                IpRulesManager.updateProxyId(ip, id)
+                IpRulesManager.setProxy(ip, id)
                 ip.proxyId = id
             }
             val name = conf?.name ?: getString(R.string.settings_app_list_default_app)

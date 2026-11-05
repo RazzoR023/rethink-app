@@ -840,7 +840,7 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
             }
             return
         }
-        IpRulesManager.addIpRule(currentInfo.uid, ip, /*wildcard-port*/ 0, ipRuleStatus, proxyId = "", proxyCC = "")
+        IpRulesManager.addIpRule(currentInfo.uid, ip, /*wildcard-port*/ 0, ipRuleStatus)
         Logger.i(LOG_TAG_FIREWALL, "apply ip-rule for ${currentInfo.uid}, $ip, ${ipRuleStatus.name}")
         logEvent("IP rule changed", "UID: ${currentInfo.uid}, IP: $ip, IpRuleStatus: ${ipRuleStatus.name}")
         uiCtx {

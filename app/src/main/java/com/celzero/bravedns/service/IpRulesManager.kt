@@ -26,6 +26,7 @@ import com.celzero.bravedns.database.CustomIpRepository
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.Constants.Companion.UNSPECIFIED_PORT
 import com.celzero.firestack.backend.Backend
+import com.celzero.firestack.backend.IpTree
 import com.google.common.cache.Cache
 import com.google.common.cache.CacheBuilder
 import inet.ipaddr.IPAddress
@@ -35,14 +36,21 @@ import org.koin.core.component.inject
 
 object IpRulesManager : KoinComponent {
 
-    private val db by inject<CustomIpRepository>()
+    private val injectedDb by inject<CustomIpRepository>()
+
+    // test seams: unit tests swap in a fake repository and an in-memory tree (overrideForTest)
+    @Volatile private var dbOverride: CustomIpRepository? = null
+    @Volatile private var treeOverride: IpTree? = null
+
+    private val db: CustomIpRepository get() = dbOverride ?: injectedDb
 
     // max size of ip request look-up cache
     private const val CACHE_MAX_SIZE = 10000L
 
     // separate tries are used internally for ip4 and ip6, if the implementation changes in the
     // future, ensure both cases continue to be handled correctly.
-    private val iptree by lazy { Backend.newIpTree() }
+    private val nativeTree: IpTree by lazy { Backend.newIpTree() }
+    private val iptree: IpTree get() = treeOverride ?: nativeTree
 
     // key-value object for ip look-up
     data class CacheKey(val ipNetPort: String, val uid: Int)
@@ -109,6 +117,16 @@ object IpRulesManager : KoinComponent {
                 }
             }
         }
+    }
+
+    /** Unit tests only: use [repo] and [tree]; nulls restore the real ones. */
+    @androidx.annotation.VisibleForTesting
+    internal fun overrideForTest(repo: CustomIpRepository?, tree: IpTree?) {
+        dbOverride = repo
+        treeOverride = tree
+        mayHaveProxyRules = false
+        selectedCCs.clear()
+        invalidateCaches()
     }
 
     private fun logv(msg: String) {
@@ -259,8 +277,10 @@ object IpRulesManager : KoinComponent {
         }
     }
 
+    // trailing separator: "uid:44:" must not be a prefix of "uid:443:..." (escLike / getLike
+    // match values by prefix; without it, removing a :44 rule also dropped the :443 rule)
     private fun treeValLike(uid: Int, port: Int): String {
-        return ("$uid$KV_SEP$port")
+        return ("$uid$KV_SEP$port$KV_SEP")
     }
 
     private fun treeValLike(uid: Int): String {
@@ -312,33 +332,60 @@ object IpRulesManager : KoinComponent {
         invalidateCaches()
     }
 
-    suspend fun updateBypass(c: CustomIp) {
-        c.status = IpRuleStatus.BYPASS_UNIVERSAL.id
-        return updateRule(c)
+    /*
+     * Status changes (updateBypass / updateTrust / updateNoRule / updateBlock) never touch the
+     * rule's proxy (proxyId / proxyCC): the stored proxy is kept even if [CustomIp] is stale.
+     * A proxy is set or cleared only through setProxy / clearProxy / updateProxyCC, or by
+     * passing it explicitly to addIpRule / replaceIpRule.
+     */
+
+    suspend fun updateBypass(c: CustomIp) = updateStatus(c, IpRuleStatus.BYPASS_UNIVERSAL)
+
+    suspend fun updateTrust(c: CustomIp) = updateStatus(c, IpRuleStatus.TRUST)
+
+    suspend fun updateNoRule(c: CustomIp) = updateStatus(c, IpRuleStatus.NONE)
+
+    suspend fun updateBlock(c: CustomIp) = updateStatus(c, IpRuleStatus.BLOCK)
+
+    private suspend fun updateStatus(c: CustomIp, status: IpRuleStatus) {
+        db.getCustomIpDetail(c.uid, c.ipAddress, c.port)?.let {
+            c.proxyId = it.proxyId
+            c.proxyCC = it.proxyCC
+        }
+        c.status = status.id
+        updateRule(c)
     }
 
-    suspend fun updateTrust(c: CustomIp) {
-        c.status = IpRuleStatus.TRUST.id
-        return updateRule(c)
-    }
-
-    suspend fun updateNoRule(c: CustomIp) {
-        c.status = IpRuleStatus.NONE.id
-        return updateRule(c)
-    }
-
-    suspend fun updateBlock(c: CustomIp) {
-        c.status = IpRuleStatus.BLOCK.id
-        return updateRule(c)
-    }
-
-    suspend fun updateProxyId(c: CustomIp, proxyId: String) {
+    /**
+     * Routes the rule of [c] (its uid / ip / port) via [proxyId]; "" clears it (no override).
+     * The stored status is kept. The proxy look-up caches are invalidated, so new connections
+     * use it right away. Updates [c] and returns it.
+     */
+    suspend fun setProxy(c: CustomIp, proxyId: String): CustomIp {
+        db.getCustomIpDetail(c.uid, c.ipAddress, c.port)?.let {
+            c.status = it.status
+            c.proxyCC = it.proxyCC
+        }
         c.proxyId = proxyId
-        return updateRule(c)
+        updateRule(c)
+        Logger.i(LOG_TAG_FIREWALL, "ip rule, setProxy: ${c.ipAddress}:${c.port}(${c.uid}) -> '$proxyId'")
+        return c
+    }
+
+    suspend fun clearProxy(c: CustomIp): CustomIp = setProxy(c, "")
+
+    @Deprecated("use setProxy", ReplaceWith("setProxy(c, proxyId)"))
+    suspend fun updateProxyId(c: CustomIp, proxyId: String) {
+        setProxy(c, proxyId)
     }
 
     suspend fun updateProxyCC(c: CustomIp, proxyCC: String) {
+        db.getCustomIpDetail(c.uid, c.ipAddress, c.port)?.let {
+            c.status = it.status
+            c.proxyId = it.proxyId
+        }
         c.proxyCC = proxyCC
+        if (proxyCC.isNotEmpty()) selectedCCs.add(proxyCC)
         return updateRule(c)
     }
 
@@ -613,50 +660,42 @@ object IpRulesManager : KoinComponent {
     }
 
     suspend fun deleteRulesByUid(uid: Int) {
-        db.getRulesByUid(uid).forEach {
-            val pair = it.getCustomIpAddress() ?: return@forEach
-            val ipaddr = pair.first
-            val port = pair.second
-            val k = normalize(ipaddr)
-            if (!k.isNullOrEmpty()) {
-                try {
-                    iptree.esc(k, treeVal(it.uid, port, it.status, it.proxyId, it.proxyCC))
-                } catch (e: Exception) {
-                    Logger.e(LOG_TAG_FIREWALL, "err iptree.esc($k) for uid: ${it.uid}", e)
-                }
-            }
-        }
+        // escLike, not esc(exact value): the stored row may differ from the caller's copy
+        db.getRulesByUid(uid).forEach { escRule(it) }
         db.deleteRulesByUid(uid)
         invalidateCaches()
         Logger.i(LOG_TAG_FIREWALL, "deleted all ip rules for uid: $uid")
     }
 
     suspend fun deleteRules(list: List<CustomIp>) {
-        list.forEach {
-            val pair = it.getCustomIpAddress() ?: return@forEach
-            val ipaddr = pair.first
-            val port = pair.second
-            val k = normalize(ipaddr)
-            if (!k.isNullOrEmpty()) {
-                try {
-                    iptree.esc(k, treeVal(it.uid, port, it.status, it.proxyId, it.proxyCC))
-                } catch (e: Exception) {
-                    Logger.e(LOG_TAG_FIREWALL, "err iptree.esc($k) for uid: ${it.uid}", e)
-                }
-            }
-        }
+        list.forEach { escRule(it) }
         db.deleteRules(list)
         invalidateCaches()
     }
 
+    /**
+     * Deletes every app-specific rule (uid != UID_EVERYBODY). The universal (all apps) rules
+     * stay in the db and in the tree. Used to clear the whole tree, so universal rules stopped
+     * being enforced until the next load().
+     */
     suspend fun deleteAllAppsRules() {
+        val apps = db.getIpRules().filter { it.uid != Constants.UID_EVERYBODY }
+        apps.forEach { escRule(it) }
         db.deleteAllAppsRules()
-        try {
-            iptree.clear()
-        } catch (e: Exception) {
-            Logger.e(LOG_TAG_FIREWALL, "err iptree.clear()", e)
-        }
         invalidateCaches()
+        Logger.i(LOG_TAG_FIREWALL, "deleted ${apps.size} app-specific ip rules")
+    }
+
+    // removes [ci] (any status / proxy) from the tree
+    private fun escRule(ci: CustomIp) {
+        val pair = ci.getCustomIpAddress() ?: return
+        val k = normalize(pair.first)
+        if (k.isNullOrEmpty()) return
+        try {
+            iptree.escLike(k, treeValLike(ci.uid, pair.second))
+        } catch (e: Exception) {
+            Logger.e(LOG_TAG_FIREWALL, "err iptree.escLike($k) for uid: ${ci.uid}", e)
+        }
     }
 
     suspend fun getObj(uid: Int, ipAddress: String, port: Int = 0): CustomIp? {
@@ -791,12 +830,28 @@ object IpRulesManager : KoinComponent {
         }
     }
 
-    suspend fun addIpRule(uid: Int, ipstr: IPAddress, port: Int?, status: IpRuleStatus, proxyId: String, proxyCC: String): CustomIp {
+    /**
+     * Adds (or overwrites) the rule for [uid] / [ipstr] / [port]. [proxyId] / [proxyCC]: null
+     * keeps the stored rule's value (none for a new rule), "" clears it, anything else sets it.
+     */
+    suspend fun addIpRule(
+        uid: Int,
+        ipstr: IPAddress,
+        port: Int?,
+        status: IpRuleStatus,
+        proxyId: String? = null,
+        proxyCC: String? = null
+    ): CustomIp {
         Logger.i(
             LOG_TAG_FIREWALL,
             "ip rule, add rule for ($uid) ip: $ipstr, $port with status: ${status.name}"
         )
         val normalizedIp = padAndNormalize(ipstr)
+        val stored = if (proxyId == null || proxyCC == null) {
+            db.getCustomIpDetail(uid, normalizedIp, port ?: UNSPECIFIED_PORT)
+        } else null
+        @Suppress("NAME_SHADOWING") val proxyId = proxyId ?: stored?.proxyId.orEmpty()
+        @Suppress("NAME_SHADOWING") val proxyCC = proxyCC ?: stored?.proxyCC.orEmpty()
         val c = makeCustomIp(uid, normalizedIp, port, status, wildcard = false, proxyId, proxyCC)
         db.insert(c)
         val k = treeKey(normalizedIp)
@@ -840,13 +895,17 @@ object IpRulesManager : KoinComponent {
         ipaddr: IPAddress,
         port: Int?,
         newStatus: IpRuleStatus,
-        proxyId: String,
-        proxyCC: String
-    ) {
+        proxyId: String? = null,
+        proxyCC: String? = null
+    ): CustomIp? {
+        // null keeps the previous rule's proxy, "" clears it
+        val stored = db.getCustomIpDetail(prevRule.uid, prevRule.ipAddress, prevRule.port) ?: prevRule
+        @Suppress("NAME_SHADOWING") val proxyId = proxyId ?: stored.proxyId
+        @Suppress("NAME_SHADOWING") val proxyCC = proxyCC ?: stored.proxyCC
         val pair = prevRule.getCustomIpAddress()
         if (pair == null) {
             Logger.e(LOG_TAG_FIREWALL, "invalid IP address on replaceIpRule ${prevRule.ipAddress}, ${prevRule.port}")
-            return
+            return null
         }
 
         val prevIpaddr = pair.first
@@ -887,6 +946,7 @@ object IpRulesManager : KoinComponent {
             }
         }
         invalidateCaches()
+        return newRule
     }
 
     // translated from go, net.SplitHostPort()

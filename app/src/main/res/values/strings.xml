@@ -3180,4 +3180,56 @@
     <string name="app_details_activity_empty_title" translatable="true">No recent activity</string>
     <string name="app_details_activity_empty_body" translatable="true">Connections this app makes while Rethink is on show up here.</string>
 
+    <!-- custom IP / domain rules screen (ui/compose/rules) -->
+    <string name="rules_title" translatable="true">IP and domain rules</string>
+    <string name="rules_scope_all_apps" translatable="true">All apps</string>
+    <string name="rules_scope_app_rules" translatable="true">App-specific rules</string>
+    <string name="rules_unknown_app" translatable="true">Unknown app (%1$d)</string>
+    <string name="rules_navigate_up" translatable="true">Navigate up</string>
+    <string name="rules_more_options" translatable="true">More options</string>
+    <string name="rules_row_more" translatable="true">More options for %1$s</string>
+    <string name="rules_search_ip" translatable="true">Search IPs and ports</string>
+    <string name="rules_search_domain" translatable="true">Search domains</string>
+    <string name="rules_search_clear" translatable="true">Clear search</string>
+    <string name="rules_add" translatable="true">Add rule</string>
+    <string name="rules_delete_all" translatable="true">Delete all rules</string>
+    <string name="rules_selected" translatable="true">%1$d selected</string>
+    <string name="rules_select" translatable="true">Select</string>
+    <string name="rules_open" translatable="true">Open rule</string>
+    <string name="rules_close_selection" translatable="true">Cancel selection</string>
+    <string name="rules_delete_selected" translatable="true">Delete selected</string>
+    <string name="rules_delete_selected_title" translatable="true">Delete selected rules?</string>
+    <string name="rules_delete_selected_message" translatable="true">%1$d rules will be deleted.</string>
+    <string name="rules_deleted_n" translatable="true">Deleted %1$d rules</string>
+    <string name="rules_delete_one_title" translatable="true">Delete rule?</string>
+    <string name="rules_delete_one_message" translatable="true">%1$s will no longer be blocked, trusted or routed by this rule.</string>
+    <string name="rules_empty_ip_title" translatable="true">No IP rules</string>
+    <string name="rules_empty_ip_body" translatable="true">Block, trust or route IP addresses, subnets and ports.</string>
+    <string name="rules_empty_domain_title" translatable="true">No domain rules</string>
+    <string name="rules_empty_domain_body" translatable="true">Block, trust or route domains, or wildcards like *.example.com.</string>
+    <string name="rules_empty_search" translatable="true">No rules match \"%1$s\"</string>
+    <string name="rules_changed" translatable="true">Changed %1$s</string>
+    <string name="rules_changed_just_now" translatable="true">Changed just now</string>
+    <string name="rules_show_all_cd" translatable="true">Show all rules of %1$s</string>
+    <string name="rules_action_trust" translatable="true">Trust</string>
+    <string name="rules_action_block" translatable="true">Block</string>
+    <string name="rules_action_none" translatable="true">None</string>
+    <string name="rules_action_bypass" translatable="true">Bypass universal</string>
+    <string name="rules_action_trust_desc" translatable="true">Allow, even if other rules would block it</string>
+    <string name="rules_action_block_desc" translatable="true">Block connections</string>
+    <string name="rules_action_none_desc" translatable="true">No firewall action; other rules decide</string>
+    <string name="rules_action_bypass_desc" translatable="true">Allow, skipping the universal firewall rules</string>
+    <string name="rules_section_action" translatable="true">Action</string>
+    <string name="rules_section_proxy" translatable="true">Proxy</string>
+    <string name="rules_route_via" translatable="true">Route via %1$s</string>
+    <string name="rules_route_via_menu" translatable="true">Route via…</string>
+    <string name="rules_route_via_title" translatable="true">Route via</string>
+    <string name="rules_proxy_ignored_note" translatable="true">Blocked connections are dropped, not routed. The proxy applies once the rule no longer blocks.</string>
+    <string name="rules_edit" translatable="true">Edit</string>
+    <string name="rules_delete" translatable="true">Delete</string>
+    <string name="rules_dialog_edit_ip" translatable="true">Edit IP or port rule</string>
+    <string name="rules_dialog_applies_to" translatable="true">Applies to %1$s</string>
+    <string name="rules_dialog_domain_label" translatable="true">Domain or wildcard</string>
+    <string name="rules_dialog_match" translatable="true">Match</string>
+
 </resources>
