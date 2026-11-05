@@ -644,6 +644,8 @@ dependencies {
     androidTestImplementation(platform(libs.androidxComposeComposeBom))
     androidTestImplementation(libs.androidxComposeUiTestJunit4)
     debugImplementation(libs.androidxComposeUiTestManifest)
+    // renders @Preview in Android Studio; debug builds only
+    debugImplementation(libs.androidxComposeUiUiTooling)
 
     // for in-app purchases
     "playImplementation"(libs.androidBillingclientBilling)

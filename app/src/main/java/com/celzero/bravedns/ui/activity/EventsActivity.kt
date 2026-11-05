@@ -44,8 +44,6 @@ import com.celzero.bravedns.util.UIUtils.formatToRelativeTime
 import com.celzero.bravedns.util.Utilities.delay
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
-import com.celzero.bravedns.util.restoreFrost
 import com.celzero.bravedns.viewmodel.EventsViewModel
 import com.celzero.bravedns.viewmodel.EventsViewModel.TopLevelFilter
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +97,6 @@ class EventsActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
 
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -117,9 +114,6 @@ class EventsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        restoreFrost(themeId)
-
         // Fix for keyboard issues
         state.logs.resumeGeneration++
     }

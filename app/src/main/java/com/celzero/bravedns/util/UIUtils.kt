@@ -703,11 +703,8 @@ object UIUtils {
     }
 
     fun getAccentColor(appTheme: Int): Int {
-        return when (appTheme) {
-            Themes.SYSTEM_DEFAULT.id -> R.color.accentGoodBlack
-            Themes.DARK.id -> R.color.accentGood
-            Themes.LIGHT.id -> R.color.accentGoodLight
-            Themes.TRUE_BLACK.id -> R.color.accentGoodBlack
+        return when (Themes.fromId(appTheme)) {
+            Themes.LIGHT -> R.color.accentGoodLight
             else -> R.color.accentGoodBlack
         }
     }

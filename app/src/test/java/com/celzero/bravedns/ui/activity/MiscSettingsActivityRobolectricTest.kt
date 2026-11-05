@@ -376,7 +376,23 @@ class MiscSettingsActivityRobolectricTest {
     @Test fun displayNotificationActionUi_none_showsDesc3() { notificationAction = 2; launch(); node("gen_settings_notification_desc").assertTextContains(host().getString(R.string.settings_notification_desc3), substring = true) }
     @Test fun displayAppThemeUi_systemDefault_showsTheme1Text() { launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_1), substring = true) }
     @Test fun displayAppThemeUi_light_showsTheme2Text() { theme = 1; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_2), substring = true) }
-    @Test fun displayAppThemeUi_dark_showsTheme3Text() { theme = 2; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_3), substring = true) }
+    @Test fun displayAppThemeUi_amoled_showsTheme4Text() { theme = 3; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_4), substring = true) }
+    // ids of removed themes (dark, light plus, dark plus, frost) show as the theme they map to
+    @Test fun displayAppThemeUi_removedDark_showsAmoledText() { theme = 2; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_4), substring = true) }
+    @Test fun displayAppThemeUi_removedLightPlus_showsLightText() { theme = 4; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_2), substring = true) }
+    @Test fun displayAppThemeUi_removedFrost_showsAmoledText() { theme = 6; launch(); node("gen_settings_theme_desc").assertTextContains(host().getString(R.string.settings_theme_dialog_themes_4), substring = true) }
+    @Test fun themeDialog_showsOnlySystemLightAndAmoled() {
+        launch(); openDialog("settings_activity_theme_rl", R.string.settings_theme_dialog_title)
+        listOf(R.string.settings_theme_dialog_themes_1, R.string.settings_theme_dialog_themes_2, R.string.settings_theme_dialog_themes_4)
+            .forEach { dialogText(host().getString(it)).assertExists() }
+        listOf(R.string.settings_theme_dialog_themes_3, R.string.settings_theme_dialog_themes_5, R.string.settings_theme_dialog_themes_6, R.string.settings_theme_dialog_themes_7)
+            .forEach { dialogText(host().getString(it)).assertDoesNotExist() }
+    }
+    @Test fun themeDialog_pickAmoled_storesTrueBlackId() {
+        theme = 1; launch(); openDialog("settings_activity_theme_rl", R.string.settings_theme_dialog_title)
+        dialogText(host().getString(R.string.settings_theme_dialog_themes_4)).performClick()
+        assertEquals(3, theme); assertTrue(themeChanged())
+    }
     @Test fun pcapRl_afterClick_isDisabledImmediately() {
         launch(); node("settings_activity_pcap_rl").performScrollTo().assertIsEnabled(); openPcapSheet()
         node("settings_activity_pcap_rl").assertIsNotEnabled()

@@ -89,7 +89,6 @@ import com.celzero.bravedns.util.Utilities.isAtleastT
 import com.celzero.bravedns.util.Utilities.isFdroidFlavour
 import com.celzero.bravedns.util.Utilities.isPlayStoreFlavour
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.ui.compose.networksettings.NetworkAlertDialogBuilder as MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -161,7 +160,6 @@ class MiscSettingsActivity : BaseActivity(), PcapFilesBottomSheet.PcapModeSelect
             isThemeChanged = savedInstanceState.getBoolean(KEY_THEME_CHANGE, false)
         }
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -479,70 +477,18 @@ class MiscSettingsActivity : BaseActivity(), PcapFilesBottomSheet.PcapModeSelect
 
     private fun displayAppThemeUi() {
         b.settingsActivityThemeRl.isEnabled = true
-        when (persistentState.theme) {
-            Themes.SYSTEM_DEFAULT.id -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_1)
-                    )
-            }
+        b.genSettingsThemeDesc.text =
+            getString(
+                R.string.settings_selected_theme,
+                getString(themeLabelRes(Themes.fromId(persistentState.theme)))
+            )
+    }
 
-            Themes.LIGHT.id -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_2)
-                    )
-            }
-
-            Themes.DARK.id -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_3)
-                    )
-            }
-
-            Themes.TRUE_BLACK.id -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_4)
-                    )
-            }
-
-            Themes.LIGHT_PLUS.id -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_5)
-                    )
-            }
-
-            Themes.DARK_PLUS.id -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_6)
-                    )
-            }
-
-            Themes.DARK_FROST.id -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_7)
-                    )
-            }
-
-            else -> {
-                b.genSettingsThemeDesc.text =
-                    getString(
-                        R.string.settings_selected_theme,
-                        getString(R.string.settings_theme_dialog_themes_4)
-                    )
-            }
+    private fun themeLabelRes(theme: Themes): Int {
+        return when (theme) {
+            Themes.SYSTEM_DEFAULT -> R.string.settings_theme_dialog_themes_1
+            Themes.LIGHT -> R.string.settings_theme_dialog_themes_2
+            Themes.TRUE_BLACK -> R.string.settings_theme_dialog_themes_4
         }
     }
 
@@ -1033,63 +979,22 @@ class MiscSettingsActivity : BaseActivity(), PcapFilesBottomSheet.PcapModeSelect
     private fun showThemeDialog() {
         val alertBuilder = MaterialAlertDialogBuilder(this, R.style.App_Dialog_NoDim)
         alertBuilder.setTitle(getString(R.string.settings_theme_dialog_title))
-        val items = if (isAtleastS()) {
-            arrayOf(
-                getString(R.string.settings_theme_dialog_themes_1),
-                getString(R.string.settings_theme_dialog_themes_2),
-                getString(R.string.settings_theme_dialog_themes_3),
-                getString(R.string.settings_theme_dialog_themes_4),
-                getString(R.string.settings_theme_dialog_themes_5),
-                getString(R.string.settings_theme_dialog_themes_6),
-                getString(R.string.settings_theme_dialog_themes_7)
-            )
-        } else {
-            arrayOf(
-                getString(R.string.settings_theme_dialog_themes_1),
-                getString(R.string.settings_theme_dialog_themes_2),
-                getString(R.string.settings_theme_dialog_themes_3),
-                getString(R.string.settings_theme_dialog_themes_4),
-                getString(R.string.settings_theme_dialog_themes_5),
-                getString(R.string.settings_theme_dialog_themes_6)
-            )
-        }
-        val checkedItem = persistentState.theme
+        // Set by system, Light, AMOLED dark; the stored value is the theme id, not the index
+        val choices = Themes.choices
+        val items = choices.map { getString(themeLabelRes(it)) }.toTypedArray()
+        val current = Themes.fromId(persistentState.theme)
+        val checkedItem = choices.indexOf(current)
         alertBuilder.setSingleChoiceItems(items, checkedItem) { dialog, which ->
             dialog.dismiss()
-            if (persistentState.theme == which) {
+            val selected = choices.getOrNull(which) ?: return@setSingleChoiceItems
+            if (current == selected && persistentState.theme == selected.id) {
                 return@setSingleChoiceItems
             }
 
-            persistentState.theme = which
+            persistentState.theme = selected.id
             isThemeChanged = true
-            logEvent("App theme changed, theme id: $theme")
-            when (which) {
-                Themes.SYSTEM_DEFAULT.id -> {
-                    if (isDarkThemeOn()) {
-                        setThemeRecreate(R.style.AppTheme)
-                    } else {
-                        setThemeRecreate(R.style.AppThemeWhite)
-                    }
-                }
-                Themes.LIGHT.id -> {
-                    setThemeRecreate(R.style.AppThemeWhite)
-                }
-                Themes.DARK.id -> {
-                    setThemeRecreate(R.style.AppTheme)
-                }
-                Themes.TRUE_BLACK.id -> {
-                    setThemeRecreate(R.style.AppThemeTrueBlack)
-                }
-                Themes.LIGHT_PLUS.id -> {
-                    setThemeRecreate(R.style.AppThemeWhitePlus)
-                }
-                Themes.DARK_PLUS.id -> {
-                    setThemeRecreate(R.style.AppThemeTrueBlackPlus)
-                }
-                Themes.DARK_FROST.id -> {
-                    setThemeRecreate(R.style.AppThemeTrueBlackFrost)
-                }
-            }
+            logEvent("App theme changed, theme id: ${selected.id}")
+            setThemeRecreate(Themes.getCurrentTheme(isDarkThemeOn(), selected.id))
         }
         alertBuilder.create().show()
     }

@@ -53,7 +53,6 @@ import com.celzero.bravedns.util.UIUtils
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.ui.compose.networksettings.NetworkAlertDialogBuilder as MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -108,7 +107,6 @@ class TunnelSettingsActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContent { RethinkTheme { NetworkSettingsScreen(b.layout) } }
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -699,10 +697,7 @@ class TunnelSettingsActivity : BaseActivity() {
 
     private fun openCustomLanIpDialog() {
         try {
-            var themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-            if (Themes.isFrostTheme(themeId)) {
-                themeId = R.style.App_Dialog_NoDim
-            }
+            val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
             val dialog = com.celzero.bravedns.ui.dialog.CustomLanIpDialog(
                 this,
                 persistentState,
@@ -823,10 +818,7 @@ class TunnelSettingsActivity : BaseActivity() {
     }
 
     private fun showNwReachabilityCheckDialog() {
-        var themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        if (Themes.isFrostTheme(themeId)) {
-            themeId = R.style.App_Dialog_NoDim
-        }
+        val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
         val nwReachabilityDialog = NetworkReachabilityDialog(this, persistentState, themeId)
         nwReachabilityDialog.setCanceledOnTouchOutside(true)
         nwReachabilityDialog.show()

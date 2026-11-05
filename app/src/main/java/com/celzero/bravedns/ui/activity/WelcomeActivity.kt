@@ -13,7 +13,6 @@ import com.celzero.bravedns.ui.compose.RethinkTheme
 import com.celzero.bravedns.ui.compose.utilities.WelcomeScreen
 import com.celzero.bravedns.ui.compose.utilities.WelcomeUiState
 import com.celzero.bravedns.util.Themes
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import org.koin.android.ext.android.inject
 
 class WelcomeActivity : BaseActivity() {
@@ -22,7 +21,6 @@ class WelcomeActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         theme.applyStyle(Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme), true)
         super.onCreate(savedInstanceState)
-        handleFrostEffectIfNeeded(persistentState.theme)
         enableEdgeToEdge()
         presentation = WelcomeUiState(savedInstanceState?.getInt("welcome.page") ?: 0)
         setContent { RethinkTheme { WelcomeScreen(presentation, ::launchHomeScreen) } }

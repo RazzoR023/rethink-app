@@ -26,7 +26,6 @@ import com.celzero.bravedns.ui.fragment.DnsSettingsFragment
 import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.Themes.Companion.getCurrentTheme
 import com.celzero.bravedns.util.Utilities.isAtleastQ
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import org.koin.android.ext.android.inject
 
 class DnsDetailActivity : BaseActivity() {
@@ -47,7 +46,6 @@ class DnsDetailActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
 
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)

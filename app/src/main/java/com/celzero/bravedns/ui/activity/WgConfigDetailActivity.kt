@@ -70,7 +70,6 @@ import com.celzero.bravedns.util.UIUtils.fetchColor
 import com.celzero.bravedns.util.UIUtils.openAndroidAppInfo
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.viewmodel.ProxyAppsMappingViewModel
 import com.celzero.bravedns.wireguard.Config
 import com.celzero.bravedns.wireguard.Peer
@@ -174,7 +173,6 @@ class WgConfigDetailActivity : BaseActivity() {
         b = WgDetailState(this)
         setContent { RethinkTheme { WgDetailContent(b) } }
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         isRestoredFromState = savedInstanceState != null
 
@@ -1108,10 +1106,7 @@ class WgConfigDetailActivity : BaseActivity() {
             )
             return
         }
-        var themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        if (Themes.isFrostTheme(themeId)) {
-            themeId = R.style.App_Dialog_NoDim
-        }
+        val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
         val hopDialog = WgHopDialog(this, themeId, configId, hopables, selectedId)
         hopDialog.setCanceledOnTouchOutside(false)
         hopDialog.setOnDismissListener { refreshHopStatus() }
@@ -1164,10 +1159,7 @@ class WgConfigDetailActivity : BaseActivity() {
     }
 
     private fun openAddPeerDialog() {
-        var themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        if (Themes.isFrostTheme(themeId)) {
-            themeId = R.style.App_Dialog_NoDim
-        }
+        val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
         val addPeerDialog = WgAddPeerDialog(this, themeId, configId, null)
         addPeerDialog.setCanceledOnTouchOutside(false)
         addPeerDialog.show()
@@ -1361,10 +1353,7 @@ class WgConfigDetailActivity : BaseActivity() {
 
     private fun openSsidDialog() {
         val currentSsids = WireguardManager.getConfigFilesById(configId)?.ssids.orEmpty()
-        var themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        if (Themes.isFrostTheme(themeId)) {
-            themeId = R.style.App_Dialog_NoDim
-        }
+        val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
         val ssidDialog = WgSsidDialog(this, themeId, currentSsids) { newSsids ->
             // Save callback - update the SSID configuration
             io {

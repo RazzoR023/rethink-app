@@ -39,7 +39,7 @@ import kotlinx.coroutines.withContext
 
 class WgPeersAdapter(
     val context: Context,
-    private var themeId: Int,
+    private val themeId: Int,
     private val configId: Int,
     private var peers: MutableList<Peer>
 ) : WgListContent {
@@ -100,9 +100,6 @@ class WgPeersAdapter(
 
     private fun openEditPeerDialog(wgPeer: Peer) {
         // send 0 as peerId to indicate that it is a new peer
-        if (Themes.isFrostTheme(themeId)) {
-            themeId = R.style.App_Dialog_NoDim
-        }
         val addPeerDialog = WgAddPeerDialog(context as Activity, themeId, configId, wgPeer)
         addPeerDialog.setCanceledOnTouchOutside(false)
         addPeerDialog.show()

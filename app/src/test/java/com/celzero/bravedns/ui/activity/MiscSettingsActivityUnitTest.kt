@@ -270,28 +270,59 @@ class MiscSettingsActivityUnitTest {
     }
 
     @Test
-    fun themes_dark_idIsTwo() {
-        assertEquals(2, Themes.DARK.id)
-    }
-
-    @Test
     fun themes_trueBlack_idIsThree() {
         assertEquals(3, Themes.TRUE_BLACK.id)
     }
 
     @Test
-    fun themes_lightPlus_idIsFour() {
-        assertEquals(4, Themes.LIGHT_PLUS.id)
+    fun themes_onlySystemLightAndAmoledRemain() {
+        assertEquals(listOf(Themes.SYSTEM_DEFAULT, Themes.LIGHT, Themes.TRUE_BLACK), Themes.entries.toList())
+        assertEquals(Themes.entries.toList(), Themes.choices)
     }
 
     @Test
-    fun themes_darkPlus_idIsFive() {
-        assertEquals(5, Themes.DARK_PLUS.id)
+    fun themes_migrate_mapsRemovedIdsToNearest() {
+        assertEquals(Themes.SYSTEM_DEFAULT.id, Themes.migrate(0))
+        assertEquals(Themes.LIGHT.id, Themes.migrate(1))
+        assertEquals(Themes.TRUE_BLACK.id, Themes.migrate(2)) // dark
+        assertEquals(Themes.TRUE_BLACK.id, Themes.migrate(3))
+        assertEquals(Themes.LIGHT.id, Themes.migrate(4)) // light plus
+        assertEquals(Themes.TRUE_BLACK.id, Themes.migrate(5)) // dark plus
+        assertEquals(Themes.TRUE_BLACK.id, Themes.migrate(6)) // frost
+        assertEquals(Themes.SYSTEM_DEFAULT.id, Themes.migrate(42))
+        assertEquals(Themes.SYSTEM_DEFAULT.id, Themes.migrate(-1))
     }
 
     @Test
-    fun themes_darkFrost_idIsSix() {
-        assertEquals(6, Themes.DARK_FROST.id)
+    fun themes_resolveToTwoStyles() {
+        val light = com.celzero.bravedns.R.style.AppThemeWhite
+        val black = com.celzero.bravedns.R.style.AppThemeTrueBlack
+        assertEquals(light, Themes.getCurrentTheme(false, Themes.SYSTEM_DEFAULT.id))
+        assertEquals(black, Themes.getCurrentTheme(true, Themes.SYSTEM_DEFAULT.id))
+        assertEquals(light, Themes.getCurrentTheme(true, Themes.LIGHT.id))
+        assertEquals(black, Themes.getCurrentTheme(false, Themes.TRUE_BLACK.id))
+        for (removed in 2..6) {
+            if (removed == 3) continue
+            val expected = if (removed == 4) light else black
+            assertEquals("theme $removed", expected, Themes.getCurrentTheme(false, removed))
+            assertEquals("theme $removed", expected, Themes.getCurrentTheme(true, removed))
+        }
+        assertEquals(com.celzero.bravedns.R.style.BottomSheetDialogThemeWhite, Themes.getBottomSheetCurrentTheme(false, 0))
+        assertEquals(com.celzero.bravedns.R.style.BottomSheetDialogThemeTrueBlack, Themes.getBottomSheetCurrentTheme(true, 0))
+        assertTrue(Themes.isActivityLightTheme(false, 4))
+        assertFalse(Themes.isActivityLightTheme(false, 6))
+    }
+
+    @Test
+    fun themes_migrateSavedTheme_rewritesOnlyRemovedIds() {
+        val prefs = io.mockk.mockk<com.celzero.bravedns.service.PersistentState>(relaxed = true)
+        var stored = 5
+        io.mockk.every { prefs.theme } answers { stored }
+        io.mockk.every { prefs.theme = any() } answers { stored = firstArg() }
+        assertTrue(Themes.migrateSavedTheme(prefs))
+        assertEquals(Themes.TRUE_BLACK.id, stored)
+        assertFalse(Themes.migrateSavedTheme(prefs))
+        io.mockk.verify(exactly = 1) { prefs.theme = any() }
     }
 
     // =====================================================================================

@@ -18,115 +18,95 @@ package com.celzero.bravedns.util
 import android.view.Window
 import androidx.core.view.WindowInsetsControllerCompat
 import com.celzero.bravedns.R
+import com.celzero.bravedns.service.PersistentState
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 
-// Application themes enum
+/**
+ * App themes. There are two: Light and AMOLED dark (pure black, stored as [TRUE_BLACK]);
+ * [SYSTEM_DEFAULT] follows the system dark mode and picks one of them.
+ *
+ * Ids are what [PersistentState.theme] stores. They stay as they were so saved settings keep
+ * their meaning; ids of the removed themes (2 Dark, 4 Light Plus, 5 Dark Plus, 6 Frost) are
+ * mapped to the nearest remaining theme by [migrate].
+ */
 enum class Themes(val id: Int) {
     SYSTEM_DEFAULT(0),
     LIGHT(1),
-    DARK(2),
-    TRUE_BLACK(3),
-    LIGHT_PLUS(4),
-    DARK_PLUS(5),
-    DARK_FROST(6);
+    TRUE_BLACK(3); // "AMOLED dark"
 
     companion object {
-        fun getThemeCount(): Int {
-            return entries.count()
-        }
+        // ids of themes that no longer exist
+        private const val REMOVED_DARK = 2
+        private const val REMOVED_LIGHT_PLUS = 4
+        private const val REMOVED_DARK_PLUS = 5
+        private const val REMOVED_DARK_FROST = 6
 
-        fun getAvailableThemeCount(): Int {
-            return entries.count()
-        }
+        /** The choices the settings theme picker shows, in order. */
+        val choices: List<Themes> = listOf(SYSTEM_DEFAULT, LIGHT, TRUE_BLACK)
 
-        fun isFrostTheme(id: Int): Boolean {
-            return id == DARK_FROST.id
-        }
+        fun fromId(id: Int): Themes = entries.firstOrNull { it.id == migrate(id) } ?: SYSTEM_DEFAULT
 
-        fun isThemeAvailable(_id: Int): Boolean {
-            return true
-        }
-
-        fun getTheme(id: Int): Int {
+        /**
+         * Maps a stored theme id to one of the remaining themes: Light Plus -> Light;
+         * Dark, Dark Plus, Frost -> AMOLED dark; unknown ids -> Set by system.
+         */
+        fun migrate(id: Int): Int {
             return when (id) {
-                SYSTEM_DEFAULT.id -> 0 // system default
-                LIGHT.id -> R.style.AppThemeWhite
-                DARK.id -> R.style.AppTheme
-                TRUE_BLACK.id -> R.style.AppThemeTrueBlack
-                LIGHT_PLUS.id -> R.style.AppThemeWhitePlus
-                DARK_PLUS.id -> R.style.AppThemeTrueBlackPlus
-                DARK_FROST.id -> R.style.AppThemeTrueBlackFrost
-                else -> 0
+                SYSTEM_DEFAULT.id, LIGHT.id, TRUE_BLACK.id -> id
+                REMOVED_LIGHT_PLUS -> LIGHT.id
+                REMOVED_DARK, REMOVED_DARK_PLUS, REMOVED_DARK_FROST -> TRUE_BLACK.id
+                else -> SYSTEM_DEFAULT.id
             }
         }
 
-        private fun getBottomSheetTheme(id: Int): Int {
-            return when (id) {
-                SYSTEM_DEFAULT.id -> 0 // system default
-                LIGHT.id -> R.style.BottomSheetDialogThemeWhite
-                DARK.id -> R.style.BottomSheetDialogTheme
-                TRUE_BLACK.id -> R.style.BottomSheetDialogThemeTrueBlack
-                LIGHT_PLUS.id -> R.style.BottomSheetDialogThemeWhitePlus
-                DARK_PLUS.id -> R.style.BottomSheetDialogThemeTrueBlackPlus
-                DARK_FROST.id -> R.style.BottomSheetDialogThemeTrueBlackFrost
-                else -> 0
+        /** One-time rewrite of a saved removed-theme id; returns true if the value changed. */
+        fun migrateSavedTheme(persistentState: PersistentState): Boolean {
+            val saved = persistentState.theme
+            val migrated = migrate(saved)
+            if (migrated == saved) return false
+            persistentState.theme = migrated
+            return true
+        }
+
+        /** True when [theme] resolves to the dark (AMOLED) theme. */
+        fun isDark(isDarkThemeOn: Boolean, theme: Int): Boolean {
+            return when (fromId(theme)) {
+                SYSTEM_DEFAULT -> isDarkThemeOn
+                LIGHT -> false
+                TRUE_BLACK -> true
+            }
+        }
+
+        fun getTheme(id: Int): Int {
+            return when (fromId(id)) {
+                SYSTEM_DEFAULT -> 0 // system default
+                LIGHT -> R.style.AppThemeWhite
+                TRUE_BLACK -> R.style.AppThemeTrueBlack
             }
         }
 
         fun getCurrentTheme(isDarkThemeOn: Boolean, theme: Int): Int {
-            return if (theme == SYSTEM_DEFAULT.id) {
-                if (isDarkThemeOn) {
-                    getTheme(TRUE_BLACK.id)
-                } else {
-                    getTheme(LIGHT.id)
-                }
-            } else if (theme == LIGHT.id) {
-                getTheme(theme)
-            } else if (theme == DARK.id) {
-                getTheme(theme)
-            } else if (theme == LIGHT_PLUS.id) {
-                getTheme(theme)
-            } else if (theme == DARK_PLUS.id) {
-                getTheme(theme)
-            } else if (theme == DARK_FROST.id) {
-                getTheme(theme)
+            return if (isDark(isDarkThemeOn, theme)) {
+                R.style.AppThemeTrueBlack
             } else {
-                getTheme(TRUE_BLACK.id)
+                R.style.AppThemeWhite
             }
         }
 
         fun getBottomSheetCurrentTheme(isDarkThemeOn: Boolean, theme: Int): Int {
-            return if (theme == SYSTEM_DEFAULT.id) {
-                if (isDarkThemeOn) {
-                    getBottomSheetTheme(TRUE_BLACK.id)
-                } else {
-                    getBottomSheetTheme(LIGHT.id)
-                }
-            } else if (theme == LIGHT.id) {
-                getBottomSheetTheme(theme)
-            } else if (theme == DARK.id) {
-                getBottomSheetTheme(theme)
-            } else if (theme == LIGHT_PLUS.id) {
-                getBottomSheetTheme(theme)
-            } else if (theme == DARK_PLUS.id) {
-                getBottomSheetTheme(theme)
-            } else if (theme == DARK_FROST.id) {
-                getBottomSheetTheme(theme)
+            return if (isDark(isDarkThemeOn, theme)) {
+                R.style.BottomSheetDialogThemeTrueBlack
             } else {
-                getBottomSheetTheme(TRUE_BLACK.id)
+                R.style.BottomSheetDialogThemeWhite
             }
         }
 
         fun isBottomSheetLightTheme(isDarkThemeOn: Boolean, theme: Int): Boolean {
-            val resolved = getBottomSheetCurrentTheme(isDarkThemeOn, theme)
-            return resolved == R.style.BottomSheetDialogThemeWhite ||
-                resolved == R.style.BottomSheetDialogThemeWhitePlus
+            return !isDark(isDarkThemeOn, theme)
         }
 
         fun isActivityLightTheme(isDarkThemeOn: Boolean, theme: Int): Boolean {
-            val resolved = getCurrentTheme(isDarkThemeOn, theme)
-            return resolved == R.style.AppThemeWhite ||
-                resolved == R.style.AppThemeWhitePlus
+            return !isDark(isDarkThemeOn, theme)
         }
 
         fun applyBottomSheetSystemBarAppearance(

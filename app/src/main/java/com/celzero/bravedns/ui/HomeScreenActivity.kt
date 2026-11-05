@@ -89,7 +89,6 @@ import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.isPlayStoreFlavour
 import com.celzero.bravedns.util.Utilities.isWebsiteFlavour
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.ui.compose.RethinkTheme
 import com.celzero.bravedns.ui.compose.chrome.HomeChromeLayout
 import com.celzero.bravedns.ui.compose.chrome.HomeChromeDialog
@@ -216,7 +215,6 @@ class HomeScreenActivity : BaseActivity() {
             return
         }
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         updateNewVersion()
 

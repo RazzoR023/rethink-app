@@ -44,7 +44,6 @@ import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.Themes.Companion.getCurrentTheme
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import org.koin.android.ext.android.inject
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
@@ -73,7 +72,6 @@ class AppLockActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContent { RethinkTheme { AppLockScreen() } }
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)

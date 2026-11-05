@@ -234,7 +234,6 @@ class HomeScreenFragment : Fragment() {
         )
     }
 
-    private lateinit var themeNames: Array<String>
     private lateinit var startForResult: ActivityResultLauncher<Intent>
     private lateinit var notificationPermissionResult: ActivityResultLauncher<String>
     private lateinit var localNetworkPermissionResult: ActivityResultLauncher<String>
@@ -406,14 +405,6 @@ class HomeScreenFragment : Fragment() {
     }
 
     private fun initializeValues() {
-        themeNames =
-            arrayOf(
-                getString(R.string.settings_theme_dialog_themes_1),
-                getString(R.string.settings_theme_dialog_themes_2),
-                getString(R.string.settings_theme_dialog_themes_3),
-                getString(R.string.settings_theme_dialog_themes_4)
-            )
-
         appConfig.getBraveModeObservable().postValue(appConfig.getBraveMode().mode)
     }
 

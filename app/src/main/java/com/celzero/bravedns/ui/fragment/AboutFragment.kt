@@ -101,8 +101,6 @@ import com.celzero.bravedns.util.Utilities.isFdroidFlavour
 import com.celzero.bravedns.util.Utilities.isPlayStoreFlavour
 import com.celzero.bravedns.util.Utilities.isWebsiteDegoogledFlavour
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.disableFrostTemporarily
-import com.celzero.bravedns.util.restoreFrost
 import com.celzero.firestack.intra.Intra
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -215,12 +213,6 @@ class AboutFragment : Fragment(), KoinComponent {
                 persistentState.memoryProfileDirUri = uri.toString()
                 performMemoryProfileCapture(uri)
             }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        val themeId = Themes.getTheme(persistentState.theme)
-        restoreFrost(themeId)
     }
 
     override fun onDestroyView() {
@@ -463,7 +455,6 @@ class AboutFragment : Fragment(), KoinComponent {
                 }
             }
             b.aboutMail -> {
-                disableFrostTemporarily()
                 sendEmailIntent(requireContext())
             }
             b.aboutTwitter -> {

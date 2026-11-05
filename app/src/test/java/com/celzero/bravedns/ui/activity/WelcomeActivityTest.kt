@@ -132,11 +132,11 @@ class WelcomeActivityTest {
         compose.onNodeWithContentDescription("5 / 4").assertDoesNotExist()
     }
     @Test fun testPersistentStateInjection() {
-        themeId = Themes.DARK.id
+        themeId = Themes.TRUE_BLACK.id
         launch()
         assertSame(persistent, GlobalContext.get().get<PersistentState>())
         verify(atLeast = 1) { persistent.theme }
-        assertEquals(Themes.DARK.id, persistent.theme)
+        assertEquals(Themes.TRUE_BLACK.id, persistent.theme)
     }
     @Test fun testBackPressHandling() {
         val activity = launch()

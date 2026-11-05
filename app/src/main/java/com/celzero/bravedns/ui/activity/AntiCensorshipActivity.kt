@@ -39,7 +39,6 @@ import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.isOsVersionAbove412
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.firestack.settings.Settings
 import org.koin.android.ext.android.inject
 
@@ -90,7 +89,6 @@ class AntiCensorshipActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
 
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)

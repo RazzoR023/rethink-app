@@ -59,7 +59,6 @@ import com.celzero.bravedns.util.UIUtils.fetchToggleBtnColors
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.firestack.backend.RouterStats
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -116,7 +115,6 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
         theme.applyStyle(Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme), true)
         super.onCreate(savedInstanceState)
 
-        handleFrostEffectIfNeeded(persistentState.theme)
         // edge-to-edge is on (BaseActivity); keep the content clear of the status/nav bars
         b.root.applySystemBarEdgeInsets()
 

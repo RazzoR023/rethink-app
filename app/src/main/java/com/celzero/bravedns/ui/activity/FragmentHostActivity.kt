@@ -36,7 +36,6 @@ import com.celzero.bravedns.ui.BaseActivity
 import com.celzero.bravedns.ui.compose.ActivityFragmentContainer
 import com.celzero.bravedns.ui.compose.RethinkTheme
 import com.celzero.bravedns.util.Themes.Companion.getCurrentTheme
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.util.SnackbarHelper.applyTopInsetOnly
 import org.koin.android.ext.android.inject
 
@@ -80,7 +79,6 @@ class FragmentHostActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         findViewById<View>(R.id.fragment_container).applyTopInsetOnly()
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         // Retrieve fragment class name from savedInstanceState or intent
         fragmentClassName = savedInstanceState?.getString(STATE_FRAGMENT_CLASS_NAME)

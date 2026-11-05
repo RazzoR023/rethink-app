@@ -757,7 +757,7 @@
     <string name="settings_theme_dialog_themes_1" translatable="true">Set by System</string>
     <string name="settings_theme_dialog_themes_2" translatable="true">Light</string>
     <string name="settings_theme_dialog_themes_3" translatable="true">Dark</string>
-    <string name="settings_theme_dialog_themes_4" translatable="true">True Black</string>
+    <string name="settings_theme_dialog_themes_4" translatable="true">AMOLED dark</string>
     <string name="settings_theme_dialog_themes_5" translatable="true">Light Plus</string>
     <string name="settings_theme_dialog_themes_6" translatable="true">Dark Plus</string>
     <string name="settings_theme_dialog_themes_7" translatable="true">Frost</string>
@@ -3087,5 +3087,40 @@
     <string name="dolphin_quote_swimming_somewhere_else" translatable="false">Swimming somewhere else.</string>
     <string name="dolphin_quote_lost_we_meant_it" translatable="false">Lost? We meant to do that.</string>
     <string name="dolphin_quote_nothing_suspicious" translatable="false">Nothing suspicious. Just swimming.</string>
+
+
+    <!-- design system (ui/compose/design) -->
+    <string name="design_status_up" translatable="true">Up</string>
+    <string name="design_status_waiting" translatable="true">Waiting</string>
+    <string name="design_status_off" translatable="true">Off</string>
+    <string name="design_status_error" translatable="true">Error</string>
+    <string name="design_status_cd" translatable="true">Status: %1$s</string>
+
+    <!-- shared proxy picker (ui/compose/design/ProxyPickerSheet.kt) -->
+    <string name="proxy_picker_title_app" translatable="true">Proxy for %1$s</string>
+    <string name="proxy_picker_title_rule" translatable="true">Route via proxy</string>
+    <string name="proxy_picker_follow_global" translatable="true">Default</string>
+    <string name="proxy_picker_follow_global_desc" translatable="true">Follow the global proxy settings</string>
+    <string name="proxy_picker_bypass" translatable="true">No proxy</string>
+    <string name="proxy_picker_bypass_desc" translatable="true">Bypass all proxies and connect directly</string>
+    <string name="proxy_picker_no_override" translatable="true">No proxy override</string>
+    <string name="proxy_picker_no_override_desc" translatable="true">Use the app\'s proxy or the global settings</string>
+    <string name="proxy_picker_multiple" translatable="true">Multiple (%1$d)</string>
+    <string name="proxy_picker_multiple_desc" translatable="true">Routed via %1$s. Pick one to replace them.</string>
+    <string name="proxy_picker_section_proxies" translatable="true">Proxies</string>
+    <string name="proxy_picker_wireguard" translatable="true">WireGuard</string>
+    <string name="proxy_picker_socks5" translatable="true">SOCKS5</string>
+    <string name="proxy_picker_socks5_not_set" translatable="true">SOCKS5 · not set up</string>
+    <string name="proxy_picker_orbot" translatable="true">Orbot (Tor)</string>
+    <string name="proxy_picker_unknown" translatable="true">Proxy no longer available</string>
+    <string name="proxy_picker_off_note" translatable="true">Turned off. Choosing it does not turn it on.</string>
+    <string name="proxy_picker_wg_catch_all" translatable="true">catch-all</string>
+    <string name="proxy_picker_wg_lockdown" translatable="true">lockdown</string>
+    <string name="proxy_picker_wg_one" translatable="true">routes all apps</string>
+    <string name="proxy_picker_wg_mobile_only" translatable="true">mobile data only</string>
+    <string name="proxy_picker_wg_ssid" translatable="true">selected Wi-Fi only</string>
+    <string name="proxy_picker_empty_title" translatable="true">No proxies set up</string>
+    <string name="proxy_picker_empty_body" translatable="true">Add a WireGuard config, a SOCKS5 proxy or Orbot under Configure, then Proxy.</string>
+    <string name="proxy_picker_loading" translatable="true">Loading proxies…</string>
 
 </resources>

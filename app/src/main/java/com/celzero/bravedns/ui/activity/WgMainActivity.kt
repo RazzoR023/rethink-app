@@ -50,7 +50,6 @@ import com.celzero.bravedns.util.UIUtils
 import com.celzero.bravedns.util.UIUtils.fetchToggleBtnColors
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.viewmodel.WgConfigViewModel
 import com.celzero.bravedns.ui.compose.wireguard.WgAlertDialogBuilder as MaterialAlertDialogBuilder
 import com.google.zxing.qrcode.QRCodeReader
@@ -173,7 +172,6 @@ class WgMainActivity :
         b = WgMainState(this)
         setContent { RethinkTheme { WgMainContent(b) } }
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         init()
 

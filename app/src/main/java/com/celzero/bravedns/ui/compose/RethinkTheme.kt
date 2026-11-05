@@ -3,18 +3,30 @@ package com.celzero.bravedns.ui.compose
 
 import com.celzero.bravedns.ui.compose.resources.obtainOrderedStyledAttributes
 
+import android.content.Context
 import androidx.annotation.AttrRes
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import com.celzero.bravedns.R
+import com.celzero.bravedns.ui.compose.design.LocalRethinkStatusColors
+import com.celzero.bravedns.ui.compose.design.RethinkAmoledColorScheme
+import com.celzero.bravedns.ui.compose.design.RethinkAmoledStatusColors
+import com.celzero.bravedns.ui.compose.design.RethinkLightColorScheme
+import com.celzero.bravedns.ui.compose.design.RethinkLightStatusColors
+import com.celzero.bravedns.ui.compose.design.RethinkShapes
+import com.celzero.bravedns.ui.compose.design.RethinkTypography
 import com.google.android.material.R as MaterialR
 
-/** Uses the host's selected Activity or Dialog theme, including Plus/Frost/alpha. */
+/**
+ * Legacy: reads a colour attribute of the host's XML theme (AppThemeWhite / AppThemeTrueBlack
+ * or a bottom-sheet theme). Only the ported screens use this; new code must use
+ * MaterialTheme.colorScheme / MaterialTheme.statusColors instead.
+ */
 @Composable
 fun themeColor(@AttrRes attribute: Int): Color {
     LocalConfiguration.current
@@ -25,76 +37,42 @@ fun themeColor(@AttrRes attribute: Int): Color {
     } finally { values.recycle() }
 }
 
-@Composable
-fun RethinkTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = themeColor(androidx.appcompat.R.attr.colorPrimary),
-            onPrimary = themeColor(MaterialR.attr.colorOnPrimary),
-            primaryContainer = themeColor(MaterialR.attr.colorPrimaryContainer),
-            onPrimaryContainer = themeColor(MaterialR.attr.colorOnPrimaryContainer),
-            secondary = themeColor(MaterialR.attr.colorSecondary),
-            onSecondary = themeColor(MaterialR.attr.colorOnSecondary),
-            secondaryContainer = themeColor(R.attr.colorSecondaryContainer),
-            onSecondaryContainer = themeColor(R.attr.colorOnSecondaryContainer),
-            tertiary = themeColor(MaterialR.attr.colorTertiary),
-            onTertiary = themeColor(MaterialR.attr.colorOnTertiary),
-            tertiaryContainer = themeColor(R.attr.colorTertiaryContainer),
-            onTertiaryContainer = themeColor(R.attr.colorOnTertiaryContainer),
-            error = themeColor(androidx.appcompat.R.attr.colorError),
-            onError = themeColor(MaterialR.attr.colorOnError),
-            errorContainer = themeColor(R.attr.colorErrorContainer),
-            onErrorContainer = themeColor(R.attr.colorOnErrorContainer),
-            background = themeColor(R.attr.background),
-            onBackground = themeColor(R.attr.primaryTextColor),
-            surface = themeColor(MaterialR.attr.colorSurface),
-            onSurface = themeColor(R.attr.colorOnSurface),
-            surfaceVariant = themeColor(R.attr.colorSurfaceVariant),
-            onSurfaceVariant = themeColor(R.attr.colorOnSurfaceVariant),
-            surfaceTint = themeColor(androidx.appcompat.R.attr.colorPrimary),
-            inverseSurface = themeColor(MaterialR.attr.colorSurfaceInverse),
-            inverseOnSurface = themeColor(MaterialR.attr.colorOnSurfaceInverse),
-            inversePrimary = themeColor(MaterialR.attr.colorPrimaryInverse),
-            outline = themeColor(R.attr.colorOutline),
-            outlineVariant = themeColor(R.attr.border),
-            scrim = Color.Black,
-            surfaceDim = themeColor(R.attr.colorSurfaceContainerLowest),
-            surfaceBright = themeColor(R.attr.colorSurfaceContainerHighest),
-            surfaceContainer = themeColor(R.attr.colorSurfaceContainer),
-            surfaceContainerLow = themeColor(R.attr.colorSurfaceContainerLow),
-            surfaceContainerHigh = themeColor(R.attr.colorSurfaceContainerHigh),
-            surfaceContainerHighest = themeColor(R.attr.colorSurfaceContainerHighest),
-            surfaceContainerLowest = themeColor(R.attr.colorSurfaceContainerLowest),
-        ),
-        typography = rethinkTypography(),
-        content = content,
-    )
-}
-
-/** Resolve the existing Android TextAppearance values, including font-relative spacing.
- * Keeping SP spacing constants would incorrectly scale letter spacing on Android 14+.
+/**
+ * The app's Material 3 theme, Light or AMOLED dark, matching the XML theme the host
+ * Activity / dialog applied (see util/Themes.kt), so Compose and XML always agree.
  */
 @Composable
-private fun rethinkTypography(): Typography {
-    val context = LocalContext.current
-    @Composable fun style(attribute: Int) = com.celzero.bravedns.ui.compose.utilities.utilityTextStyle(
-        appearance = com.celzero.bravedns.ui.compose.utilities.resolveUtilityStyle(context, attribute)
-    )
-    return Typography(
-        displayLarge = style(MaterialR.attr.textAppearanceDisplayLarge),
-        displayMedium = style(MaterialR.attr.textAppearanceDisplayMedium),
-        displaySmall = style(MaterialR.attr.textAppearanceDisplaySmall),
-        headlineLarge = style(MaterialR.attr.textAppearanceHeadlineLarge),
-        headlineMedium = style(MaterialR.attr.textAppearanceHeadlineMedium),
-        headlineSmall = style(MaterialR.attr.textAppearanceHeadlineSmall),
-        titleLarge = style(MaterialR.attr.textAppearanceTitleLarge),
-        titleMedium = style(MaterialR.attr.textAppearanceTitleMedium),
-        titleSmall = style(MaterialR.attr.textAppearanceTitleSmall),
-        bodyLarge = style(MaterialR.attr.textAppearanceBodyLarge),
-        bodyMedium = style(MaterialR.attr.textAppearanceBodyMedium),
-        bodySmall = style(MaterialR.attr.textAppearanceBodySmall),
-        labelLarge = style(MaterialR.attr.textAppearanceLabelLarge),
-        labelMedium = style(MaterialR.attr.textAppearanceLabelMedium),
-        labelSmall = style(MaterialR.attr.textAppearanceLabelSmall),
-    )
+fun RethinkTheme(content: @Composable () -> Unit) {
+    LocalConfiguration.current
+    val fallback = isSystemInDarkTheme()
+    val dark = LocalContext.current.isDarkXmlTheme() ?: fallback
+    RethinkTheme(darkTheme = dark, content = content)
+}
+
+/**
+ * The app's Material 3 theme with an explicit choice: [darkTheme] true is AMOLED dark.
+ * Use it for previews and galleries; screens use the no-argument overload.
+ */
+@Composable
+fun RethinkTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
+    CompositionLocalProvider(
+        LocalRethinkStatusColors provides
+            if (darkTheme) RethinkAmoledStatusColors else RethinkLightStatusColors
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) RethinkAmoledColorScheme else RethinkLightColorScheme,
+            typography = RethinkTypography,
+            shapes = RethinkShapes,
+            content = content,
+        )
+    }
+}
+
+/** True if the context's XML theme has a dark surface; null if it has no colorSurface. */
+private fun Context.isDarkXmlTheme(): Boolean? {
+    val values = obtainOrderedStyledAttributes(intArrayOf(MaterialR.attr.colorSurface))
+    return try {
+        if (!values.hasValue(0)) null
+        else Color(values.getColor(0, android.graphics.Color.WHITE)).luminance() < 0.5f
+    } finally { values.recycle() }
 }

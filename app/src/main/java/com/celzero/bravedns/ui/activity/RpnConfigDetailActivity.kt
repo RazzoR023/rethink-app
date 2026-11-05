@@ -61,7 +61,6 @@ import com.celzero.bravedns.util.UIUtils.fetchColor
 import com.celzero.bravedns.util.UIUtils.openAndroidAppInfo
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.viewmodel.ProxyAppsMappingViewModel
 import com.celzero.firestack.backend.Backend
 import com.celzero.firestack.backend.IPMetadata
@@ -181,7 +180,6 @@ class RpnConfigDetailActivity : BaseActivity() {
         theme.applyStyle(Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme), true)
         super.onCreate(savedInstanceState)
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             WindowInsetsControllerCompat(window, window.decorView)
@@ -1541,8 +1539,7 @@ class RpnConfigDetailActivity : BaseActivity() {
 
     private fun openSsidDialog() {
         if (configKey.isBlank() || countryConfig == null) return
-        var themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        if (Themes.isFrostTheme(themeId)) themeId = R.style.App_Dialog_NoDim
+        val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
         val dlg = RpnSsidDialog(
             this, themeId, configKey,
             countryConfig?.countryName ?: configKey,

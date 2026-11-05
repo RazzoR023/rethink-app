@@ -19,9 +19,9 @@ class ThemeChangeTest : SafeRootHostTest() {
     @Test fun testThemeChangeRecreation() {
         launch()
         compose.onNodeWithTag("fhs_dns_on_off_btn").assertIsDisplayed()
-        // Preserve DARK -> LIGHT transitions and extend to every stored theme.
-        val themes = listOf(com.celzero.bravedns.util.Themes.DARK, com.celzero.bravedns.util.Themes.LIGHT) +
-            com.celzero.bravedns.util.Themes.entries.filter { it != com.celzero.bravedns.util.Themes.DARK && it != com.celzero.bravedns.util.Themes.LIGHT }
+        // AMOLED dark -> Light transitions, then every stored theme.
+        val themes = listOf(com.celzero.bravedns.util.Themes.TRUE_BLACK, com.celzero.bravedns.util.Themes.LIGHT) +
+            com.celzero.bravedns.util.Themes.entries.filter { it != com.celzero.bravedns.util.Themes.TRUE_BLACK && it != com.celzero.bravedns.util.Themes.LIGHT }
         for (theme in themes) {
             compose.runOnIdle { preferences.theme = theme.id }
             recreateHost()

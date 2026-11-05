@@ -17,6 +17,9 @@ package com.celzero.bravedns
 
 import com.celzero.bravedns.util.Logger
 import com.celzero.bravedns.util.Logger.LOG_TAG_SCHEDULER
+import com.celzero.bravedns.util.Logger.LOG_TAG_UI
+import com.celzero.bravedns.util.Themes
+import com.celzero.bravedns.service.PersistentState
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.os.StrictMode
@@ -50,6 +53,12 @@ class RethinkDnsApplication : Application() {
             if (DEBUG) androidLogger()
             androidContext(this@RethinkDnsApplication)
             koin.loadModules(AppModules)
+        }
+
+        // only light and amoled dark remain; map a saved removed theme (dark, light plus,
+        // dark plus, frost) to the nearest one before any activity reads it
+        if (Themes.migrateSavedTheme(get<PersistentState>())) {
+            Logger.i(LOG_TAG_UI, "theme migrated to ${get<PersistentState>().theme}")
         }
 
         val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

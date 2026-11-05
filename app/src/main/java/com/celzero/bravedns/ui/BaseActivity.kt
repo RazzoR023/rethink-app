@@ -81,8 +81,7 @@ abstract class BaseActivity(@LayoutRes contentLayoutId: Int = 0) :
      * Single source of truth shared by [applyStatusBarAppearance] and [applyAlphaThemeOverlay].
      */
     private fun isLightThemeActive(): Boolean {
-        val resolvedTheme = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        return resolvedTheme == R.style.AppThemeWhite || resolvedTheme == R.style.AppThemeWhitePlus
+        return Themes.isActivityLightTheme(isDarkThemeOn(), persistentState.theme)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

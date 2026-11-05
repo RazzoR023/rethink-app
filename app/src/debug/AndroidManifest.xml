@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: merged into the debug variants' manifest, never into release. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Design gallery (mini Storybook) for reviewing ui/compose/design components:
+             adb shell am start -n com.celzero.bravedns/.debug.DesignGalleryActivity [ez dark true] -->
+        <activity
+            android:name=".debug.DesignGalleryActivity"
+            android:exported="true"
+            android:label="Design gallery"
+            android:theme="@style/AppThemeWhite" />
+    </application>
+</manifest>

@@ -55,7 +55,6 @@ import com.celzero.bravedns.util.Constants.Companion.NOTIF_INTENT_EXTRA_IAB_DEVI
 import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.Themes.Companion.getCurrentTheme
 import com.celzero.bravedns.util.Utilities.isAtleastQ
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.ui.compose.wireguard.WgAlertDialogBuilder
 import org.koin.android.ext.android.inject
 
@@ -92,7 +91,6 @@ class NotificationHandlerActivity: BaseActivity() {
         // apply theme before super.onCreate to ensure proper dialog inflation
         theme.applyStyle(getCurrentTheme(isDarkThemeOn(), persistentState.theme), true)
         super.onCreate(savedInstanceState)
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         // This is a trampoline activity that shows dialogs but no actual UI
         setContentView(ComposeView(this).apply {

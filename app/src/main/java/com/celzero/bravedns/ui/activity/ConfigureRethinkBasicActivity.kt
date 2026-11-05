@@ -39,7 +39,6 @@ import com.celzero.bravedns.ui.fragment.RethinkListFragment
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.Utilities.isAtleastQ
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.util.SnackbarHelper.applySystemBarEdgeInsets
 import org.koin.android.ext.android.inject
 
@@ -65,7 +64,6 @@ class ConfigureRethinkBasicActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         findViewById<View>(android.R.id.content).applySystemBarEdgeInsets()
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)

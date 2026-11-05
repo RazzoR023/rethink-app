@@ -36,7 +36,6 @@ import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.UIUtils.clipboardCopy
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
 import com.celzero.bravedns.wireguard.Config
 import com.celzero.bravedns.wireguard.WgInterface
 import com.celzero.bravedns.wireguard.util.ErrorMessages
@@ -73,7 +72,6 @@ class WgConfigEditorActivity : BaseActivity() {
         b.restoreForm(savedInstanceState, "wg.editor.")
         setContent { RethinkTheme { WgEditorContent(b) } }
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         isRestoredFromState = savedInstanceState != null
 

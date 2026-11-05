@@ -75,7 +75,7 @@ class ServerRemovalNotificationBottomSheet : BaseBottomSheetDialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setStyle(STYLE_NORMAL, R.style.BottomSheetDialogTheme)
+        setStyle(STYLE_NORMAL, getTheme())
         isCancelable = true
     }
 

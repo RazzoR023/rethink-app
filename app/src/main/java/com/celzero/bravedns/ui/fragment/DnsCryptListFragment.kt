@@ -87,7 +87,7 @@ class DnsCryptListFragment : Fragment() {
                     }
                 }, onDismiss = { adding = false })
             if (relays) DnsRelaysDialog(dnsCryptRelayViewModel.dnsCryptRelayEndpointList, presenter::relay,
-                Themes.isFrostTheme(Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)), { relays = false })
+                false, { relays = false })
         } }
     }
 

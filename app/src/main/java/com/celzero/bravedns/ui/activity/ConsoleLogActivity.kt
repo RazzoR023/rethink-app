@@ -58,9 +58,6 @@ import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.util.disableFrostTemporarily
-import com.celzero.bravedns.util.handleFrostEffectIfNeeded
-import com.celzero.bravedns.util.restoreFrost
 import com.celzero.bravedns.viewmodel.ConsoleLogViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -126,7 +123,6 @@ class ConsoleLogActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
 
 
-        handleFrostEffectIfNeeded(persistentState.theme)
 
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -165,9 +161,6 @@ class ConsoleLogActivity : BaseActivity() {
         // this is a workaround to restart the IME process
         b.logs.search.setQuery("", false)
         b.logs.resumeGeneration++
-
-        val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-        restoreFrost(themeId)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -464,7 +457,6 @@ class ConsoleLogActivity : BaseActivity() {
     }
 
     private fun shareZipFileViaEmail(filePath: String) {
-        disableFrostTemporarily()
         val file = File(filePath)
         if (!file.exists()) {
             Logger.w(LOG_TAG_BUG_REPORT, "log file does not exist: $filePath")
