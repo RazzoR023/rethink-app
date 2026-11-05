@@ -6,10 +6,27 @@ import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.os.Process
 import android.os.Looper
-import androidx.compose.ui.test.*
+import android.os.Process
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.lifecycleScope
@@ -18,25 +35,66 @@ import androidx.paging.PagingState
 import com.celzero.bravedns.R
 import com.celzero.bravedns.data.AppConfig
 import com.celzero.bravedns.data.AppConnection
-import com.celzero.bravedns.database.*
+import com.celzero.bravedns.database.AppInfo
+import com.celzero.bravedns.database.AppInfoDAO
+import com.celzero.bravedns.database.AppInfoRepository
+import com.celzero.bravedns.database.ConnectionTrackerDAO
+import com.celzero.bravedns.database.CustomDomainDAO
+import com.celzero.bravedns.database.CustomIpDao
+import com.celzero.bravedns.database.EventSource
+import com.celzero.bravedns.database.EventType
+import com.celzero.bravedns.database.RethinkLogDao
+import com.celzero.bravedns.database.Severity
+import com.celzero.bravedns.database.StatsSummaryDao
 import com.celzero.bravedns.glide.FavIconDownloader
-import com.celzero.bravedns.service.*
+import com.celzero.bravedns.service.DomainRulesManager
+import com.celzero.bravedns.service.EventLogger
+import com.celzero.bravedns.service.FirewallManager
+import com.celzero.bravedns.service.FirewallManager.ConnectionStatus
+import com.celzero.bravedns.service.FirewallManager.FirewallStatus
+import com.celzero.bravedns.service.IpRulesManager
+import com.celzero.bravedns.service.PersistentState
+import com.celzero.bravedns.service.ProxyChoices
+import com.celzero.bravedns.service.ProxyManager
+import com.celzero.bravedns.service.VpnController
+import com.celzero.bravedns.ui.compose.appdetails.AppDetailsDialog
 import com.celzero.bravedns.ui.compose.appdetails.AppDetailsState
+import androidx.compose.ui.text.input.TextFieldValue
+import com.celzero.bravedns.ui.compose.appdetails.AppInsightsSection
+import com.celzero.bravedns.ui.compose.appdetails.ProxyRowState
 import com.celzero.bravedns.ui.stats.StatsViewMode
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.Constants.Companion.INVALID_UID
 import com.celzero.bravedns.util.Logger
 import com.celzero.bravedns.util.UIUtils
 import com.celzero.bravedns.util.Utilities
-import com.celzero.bravedns.viewmodel.*
-import io.mockk.*
+import com.celzero.bravedns.viewmodel.AppConnectionsViewModel
+import com.celzero.bravedns.viewmodel.AppInfoViewModel
+import com.celzero.bravedns.viewmodel.CustomDomainViewModel
+import com.celzero.bravedns.viewmodel.CustomIpViewModel
+import io.mockk.Called
+import io.mockk.Runs
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -58,18 +116,18 @@ import org.robolectric.shadows.ShadowProcess
 import java.util.Collections
 
 /**
- * Actual AppInfoActivity host contracts, relocated from androidTest to a plain-Application JVM
- * sandbox so launching a test never starts RethinkDnsApplication or its services.
+ * AppInfoActivity (app details) host tests in a plain-Application JVM sandbox, so launching never
+ * starts RethinkDnsApplication or its services.
  *
  * Real lifecycle-owned ViewModels use strict constructor-injected DAO doubles and in-memory
  * PagingSources. No Room/repository constructor, disk cache, network client, VPN service, native
- * trie or permission flow is reachable from this fixture. The only production singleton with an
- * eager worker, FirewallManager, is initialized after its strict empty repository is installed;
- * its two startup jobs are joined BEFORE its controller-facing operations are mocked.
+ * trie or permission flow is reachable. FirewallManager (the only singleton with an eager worker)
+ * is initialized after its strict empty repository is installed; its two startup jobs are joined
+ * BEFORE its operations are mocked. The proxy picker's live source is mocked (no WireGuard /
+ * AppConfig access).
  *
- * All 24 original names remain. The seven "Performance"/memory workload cases assert deterministic
- * behavior here, not device speed. Their original numeric device acceptance requirements remain
- * explicitly unrun in docs/compose-migration/app-settings-host-tests.md. No exceptions are swallowed.
+ * The "Performance"/memory cases run the old workloads deterministically; they do not certify
+ * device timings or heap limits.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -89,22 +147,30 @@ class AppInfoActivityTest {
     private val apps = mutableMapOf<Int, AppInfo>()
     private val controllers = mutableListOf<ActivityController<AppInfoActivity>>()
     private lateinit var controller: ActivityController<AppInfoActivity>
-    private val firewallCommands = Collections.synchronizedList(mutableListOf<Triple<Int, FirewallManager.FirewallStatus, FirewallManager.ConnectionStatus>>())
+    private val firewallCommands = Collections.synchronizedList(mutableListOf<Triple<Int, FirewallStatus, ConnectionStatus>>())
     private val androidInfoPackages = Collections.synchronizedList(mutableListOf<String>())
     private val ipCount = MutableLiveData(3)
     private val domainCount = MutableLiveData(5)
     private var statsMode = StatsViewMode.LIST.id
     private var missing = false
     private var unknownPackage = false
+    private var lockdown = false
     private var emptyLogs = false
+    private var sharedUidNames: List<String>? = null
+    private var appProxy: ProxyManager.AppProxy = ProxyManager.AppProxy.None
+    private var proxyExcluded = false
+    private var appStatus = FirewallStatus.NONE
+    private var connStatus = ConnectionStatus.ALLOW
 
     companion object {
         private const val TEST_UID = 12345
         private const val TEST_PACKAGE = "example.synthetic.app"
         private const val TEST_NAME = "Synthetic app"
+        private const val OTHER_NAME = "Synthetic sibling"
         private const val DOMAIN = "allowed.example"
         private const val ACTIVE_IP = "192.0.2.1"
         private const val DESTINATION_IP = "192.0.2.2"
+        private const val S5_ENDPOINT = "198.51.100.7:1080"
     }
 
     @Before fun setUp() {
@@ -151,24 +217,36 @@ class AppInfoActivityTest {
         every { Logger.w(any(), any(), any()) } just Runs
         every { Logger.e(any(), any(), any()) } just Runs
         initializeEmptyFirewallManager()
-        mockkObject(FirewallManager, ProxyManager, VpnController, DomainRulesManager, IpRulesManager, Utilities, UIUtils, FavIconDownloader.Companion)
+        mockkObject(FirewallManager, ProxyManager, ProxyChoices.LiveSource, VpnController, DomainRulesManager, IpRulesManager, Utilities, UIUtils, FavIconDownloader.Companion)
         listOf(TEST_UID, 0, 1000, Int.MAX_VALUE).forEach { apps[it] = syntheticApp(it) }
         coEvery { FirewallManager.getAppInfoByUid(any()) } answers { if (missing) null else apps[firstArg()] }
         coEvery { FirewallManager.getAppInfoByUidAndPackage(any(), any()) } answers { if (missing) null else apps[firstArg()] }
         coEvery { FirewallManager.getPackageNamesByUid(any()) } answers { listOf(requireNotNull(apps[firstArg()]).packageName) }
-        coEvery { FirewallManager.getAppNamesByUid(any()) } answers { listOf(requireNotNull(apps[firstArg()]).appName) }
-        coEvery { FirewallManager.appStatus(any()) } answers { FirewallManager.FirewallStatus.NONE }
-        coEvery { FirewallManager.connectionStatus(any()) } answers { FirewallManager.ConnectionStatus.ALLOW }
+        coEvery { FirewallManager.getAppNamesByUid(any()) } answers { sharedUidNames ?: listOf(requireNotNull(apps[firstArg()]).appName) }
+        coEvery { FirewallManager.getPackageNameByAppName(any()) } answers { "pkg.of." + firstArg<String>() }
+        coEvery { FirewallManager.appStatus(any()) } answers { appStatus }
+        coEvery { FirewallManager.connectionStatus(any()) } answers { connStatus }
         coEvery { FirewallManager.isTempAllowed(any()) } returns false
+        coEvery { FirewallManager.isAppExcludedFromProxy(any()) } answers { proxyExcluded }
         every { FirewallManager.isUnknownPackage(any()) } answers { unknownPackage }
         every { FirewallManager.updateIsProxyExcluded(any(), any()) } just Runs
         coEvery { FirewallManager.updateTempAllow(any(), any()) } just Runs
+        coEvery { FirewallManager.updateAppNotes(any(), any(), any()) } just Runs
         coEvery { FirewallManager.updateFirewallStatus(any(), any(), any()) } answers {
             firewallCommands.add(Triple(firstArg(), secondArg(), thirdArg())); Unit
         }
         every { ProxyManager.getProxyIdForApp(any()) } returns emptyList()
+        coEvery { ProxyManager.getProxyForApp(any()) } answers { appProxy }
+        coEvery { ProxyManager.setProxyForApp(any(), any(), any(), any()) } returns true
+        every { ProxyManager.proxyDisplayName(any()) } answers { firstArg() }
+        every { ProxyChoices.LiveSource.wireguardConfigs() } returns emptyList()
+        every { ProxyChoices.LiveSource.isSocks5Enabled() } returns true
+        coEvery { ProxyChoices.LiveSource.socks5Endpoint() } returns S5_ENDPOINT
+        every { ProxyChoices.LiveSource.isOrbotEnabled() } returns false
+        every { ProxyChoices.LiveSource.isVpnOn() } returns false
+        coEvery { ProxyChoices.LiveSource.backendStatus(any()) } returns null
         every { VpnController.uptimeMs() } returns 60_000L
-        every { VpnController.isVpnLockdown() } returns false
+        every { VpnController.isVpnLockdown() } answers { lockdown }
         every { VpnController.closeConnectionsIfNeeded(any(), any()) } just Runs
         // Explicit denial trips if future lifecycle code tries to start/stop the real service.
         every { VpnController.start(any(), any()) } answers { error("Forbidden service start in AppInfo host fixture") }
@@ -177,7 +255,7 @@ class AppInfoActivityTest {
         every { IpRulesManager.getMostSpecificRuleMatch(any(), any(), any()) } returns IpRulesManager.IpRuleStatus.NONE
         every { Utilities.getIcon(any(), any(), any()) } answers { ColorDrawable(Color.BLUE) }
         every { UIUtils.openAndroidAppInfo(any(), any()) } answers {
-            androidInfoPackages.add(secondArg()); Unit
+            androidInfoPackages.add(secondArg<String?>().orEmpty()); Unit
         }
         // A failed-cache hit renders the flag and never constructs a Glide request/cache target.
         every { FavIconDownloader.isUrlAvailableInFailedCache(any()) } returns true
@@ -199,8 +277,7 @@ class AppInfoActivityTest {
         controllers.asReversed().forEach { if (!it.get().isDestroyed) it.pause().stop().destroy() }
         val lifecycleJobs = controllers.map { requireNotNull(it.get().lifecycleScope.coroutineContext[Job]) }
         // IO children can have cancelled continuations queued on Robolectric's paused main looper.
-        // Never block that looper in joinAll: drain it until every job is complete, keeping all
-        // fake boundaries installed throughout cancellation. The timeout still fails closed.
+        // Never block that looper in joinAll: drain it until every job is complete.
         compose.waitUntil(5000) {
             shadowOf(Looper.getMainLooper()).idle()
             lifecycleJobs.all { it.isCompleted }
@@ -208,12 +285,11 @@ class AppInfoActivityTest {
         runBlocking { withTimeout(5000) { lifecycleJobs.joinAll() } }
         verify { appDao wasNot Called }
         verify { rethinkDao wasNot Called }
-        // The initializer repository cannot be used for real data after object methods are mocked.
         coVerify(exactly = 0) { startupRepository.insert(any()) }
         coVerify(exactly = 0) { startupRepository.updateFirewallStatusByUid(any(), any(), any()) }
         verify(exactly = 0) { VpnController.start(any(), any()) }
         verify(exactly = 0) { VpnController.stop(any(), any(), any()) }
-        unmockkObject(FirewallManager, ProxyManager, VpnController, DomainRulesManager, IpRulesManager, Utilities, UIUtils, FavIconDownloader.Companion)
+        unmockkObject(FirewallManager, ProxyManager, ProxyChoices.LiveSource, VpnController, DomainRulesManager, IpRulesManager, Utilities, UIUtils, FavIconDownloader.Companion)
         unmockkObject(Logger)
         stopKoin(); ShadowDialog.reset(); ShadowProcess.reset()
     }
@@ -242,43 +318,46 @@ class AppInfoActivityTest {
         return controller.get()
     }
     private fun host() = controller.get()
-    private fun state(activity: AppInfoActivity = host()): AppDetailsState = AppInfoActivity::class.java.getDeclaredField("b").let {
+    private fun str(id: Int, vararg args: Any) = host().getString(id, *args)
+    private fun state(activity: AppInfoActivity = host()): AppDetailsState = AppInfoActivity::class.java.getDeclaredField("state").let {
         it.isAccessible = true; it.get(activity) as AppDetailsState
     }
     private fun awaitMain(condition: () -> Boolean) {
         // waitUntil advances Compose frames, but does not drain Android's paused main looper.
-        // Real Activity IO -> Main callbacks must run before inspecting their recorded results.
-        compose.waitUntil(5000) { compose.runOnIdle(condition) }
+        compose.waitUntil(5000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.runOnIdle(condition)
+        }
     }
     private fun ready(uid: Int = TEST_UID) {
-        awaitMain { state().aadAppDetailName.text.toString() == requireNotNull(apps[uid]).appName }
-        compose.onAllNodesWithText(requireNotNull(apps[uid]).appName, useUnmergedTree = true).onLast().assertExists()
+        awaitMain { state().ui.loaded && state().ui.appName == requireNotNull(apps[uid]).appName }
+        compose.onAllNodesWithText(requireNotNull(apps[uid]).appName, substring = true, useUnmergedTree = true).onLast().assertExists()
         assertFalse(host().isFinishing)
     }
-    private fun dialogReady() {
-        awaitMain { ShadowDialog.getLatestDialog()?.isShowing == true }
-        compose.onNodeWithText(host().getString(R.string.ada_noapp_dialog_title)).assertIsDisplayed()
-        assertFalse(shadowOf(requireNotNull(ShadowDialog.getLatestDialog())).isCancelable)
-    }
     private fun noApp(uid: Int? = null, emptyExtras: Boolean = false) {
-        launch(uid, emptyExtras); dialogReady()
-        compose.onNodeWithText(host().getString(R.string.ada_noapp_dialog_positive)).performClick()
+        launch(uid, emptyExtras)
+        compose.waitUntil(5000) { compose.onAllNodesWithText(str(R.string.ada_noapp_dialog_title)).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(str(R.string.ada_noapp_dialog_title)).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.ada_noapp_dialog_positive)).performClick()
         assertTrue(host().isFinishing)
         assertTrue(firewallCommands.isEmpty())
     }
+    private fun mode(title: Int): SemanticsNodeInteraction = compose.onNode(hasText(str(title)) and isSelectable())
     private fun showAllSections() {
         listOf(R.string.top_active_conns, R.string.most_contacted_asn, R.string.ssv_most_contacted_domain_heading,
             R.string.ssv_most_contacted_ips_heading, R.string.ssv_most_contacted_countries_heading).forEach {
-            compose.waitUntil(5000) { compose.onAllNodesWithText(host().getString(it)).fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText(host().getString(it)).performScrollTo().assertIsDisplayed()
+            compose.waitUntil(5000) { compose.onAllNodesWithText(str(it)).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText(str(it)).performScrollTo().assertIsDisplayed()
         }
     }
-    private fun switchProxy() = compose.onNode(hasText(host().getString(R.string.exclude_apps_from_proxy)) and hasClickAction())
     private fun destroyCurrent() { controller.pause().stop().destroy(); assertTrue(host().isDestroyed) }
     private fun assertNoObserverLeaks() {
         assertFalse(ipCount.hasObservers()); assertFalse(domainCount.hasObservers())
         assertTrue(state().insightsSnapshots.isEmpty())
     }
+    private fun nextStarted(): Intent = requireNotNull(shadowOf(host()).nextStartedActivity)
+
+    // ---- launch and header ----
 
     @Test fun testLaunchesSuccessfullyWithValidUid() {
         launch(); ready(); compose.onNodeWithTag("app_details").assertIsDisplayed()
@@ -288,56 +367,213 @@ class AppInfoActivityTest {
     @Test fun testLaunchWithInvalidUid() { noApp(INVALID_UID) }
     @Test fun testUiElementsAreDisplayedWithValidData() {
         launch(); ready()
-        compose.onNodeWithText(host().getString(R.string.app_id_package, TEST_UID, TEST_PACKAGE), useUnmergedTree = true).assertIsDisplayed()
-        assertNotNull(state().aadAppDetailIcon.drawable)
-        compose.onNodeWithContentDescription(host().getString(R.string.about_settings_app_info)).assertIsDisplayed()
-        (0..5).forEach { compose.onNodeWithTag("app_rule_$it").performScrollTo().assertIsDisplayed() }
-        compose.onNodeWithText(host().getString(R.string.lbl_ip_rules)).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(host().getString(R.string.lbl_domain_rules)).performScrollTo().assertIsDisplayed()
-        switchProxy().performScrollTo().assertIsOff()
-        assertEquals("3", state().aadIpBlockHeader.text.toString()); assertEquals("5", state().aadDomainBlockHeader.text.toString())
+        compose.onNodeWithText(str(R.string.app_details_package_uid, TEST_PACKAGE, TEST_UID), useUnmergedTree = true).assertIsDisplayed()
+        assertNotNull(state().icon)
+        compose.onNodeWithContentDescription(str(R.string.about_settings_app_info)).assertIsDisplayed()
+        compose.onNodeWithTag("app_details_summary").assertIsDisplayed().assert(hasText(str(R.string.app_details_access_allowed)))
+        compose.onNodeWithTag("app_details_wifi").performScrollTo().assertIsOn()
+        compose.onNodeWithTag("app_details_mobile").performScrollTo().assertIsOn()
+        compose.onNodeWithTag("app_details_temp_allow").performScrollTo().assertIsOff()
+        listOf(R.string.app_details_mode_normal, R.string.app_details_mode_isolate, R.string.app_details_mode_bypass_dns_firewall,
+            R.string.app_details_mode_bypass_universal, R.string.app_details_mode_exclude).forEach {
+            mode(it).performScrollTo().assertIsDisplayed()
+        }
+        mode(R.string.app_details_mode_normal).assertIsSelected()
+        compose.onNodeWithTag("app_details_proxy").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.proxy_picker_follow_global), useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("app_details_ip_rules").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("app_details_domain_rules").performScrollTo().assertIsDisplayed()
+        assertEquals(3, state().ui.ipRuleCount); assertEquals(5, state().ui.domainRuleCount)
     }
     @Test fun testUiElementsContentAndInteractions() {
-        launch(); ready(); switchProxy().performScrollTo().performClick(); switchProxy().assertIsOn()
-        verify(timeout = 2000, exactly = 1) { FirewallManager.updateIsProxyExcluded(TEST_UID, true) }
-        compose.onNodeWithContentDescription(host().getString(R.string.about_settings_app_info)).performScrollTo().performClick()
+        launch(); ready()
+        compose.onNodeWithContentDescription(str(R.string.about_settings_app_info)).performClick()
         awaitMain { androidInfoPackages.size == 1 }
         assertEquals(listOf(TEST_PACKAGE), androidInfoPackages.toList())
-        verify(exactly = 1) { UIUtils.openAndroidAppInfo(any(), TEST_PACKAGE) }
         showAllSections()
-        compose.onNodeWithText(host().getString(R.string.close_all)).performScrollTo().performClick()
-        compose.onNodeWithText(host().getString(R.string.close_conns_dialog_title)).assertIsDisplayed()
-        compose.onNodeWithText(host().getString(R.string.lbl_cancel)).performClick()
+        // close connections asks first; cancel does nothing, proceed closes
+        compose.onNodeWithTag("app_details_close_conns").performScrollTo().performClick()
+        compose.onNodeWithText(str(R.string.close_conns_dialog_title)).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.lbl_cancel)).performClick()
         verify(exactly = 0) { VpnController.closeConnectionsIfNeeded(any(), any()) }
+        compose.onNodeWithTag("app_details_close_conns").performScrollTo().performClick()
+        compose.onNodeWithText(str(R.string.lbl_proceed)).performClick()
+        verify(exactly = 1) { VpnController.closeConnectionsIfNeeded(TEST_UID, any()) }
     }
     @Test fun testAppSettingsToggleStates() {
-        val expected = listOf(
-            FirewallManager.FirewallStatus.NONE to FirewallManager.ConnectionStatus.UNMETERED,
-            FirewallManager.FirewallStatus.NONE to FirewallManager.ConnectionStatus.METERED,
-            FirewallManager.FirewallStatus.ISOLATE to FirewallManager.ConnectionStatus.ALLOW,
-            FirewallManager.FirewallStatus.BYPASS_DNS_FIREWALL to FirewallManager.ConnectionStatus.ALLOW,
-            FirewallManager.FirewallStatus.BYPASS_UNIVERSAL to FirewallManager.ConnectionStatus.ALLOW,
-            FirewallManager.FirewallStatus.EXCLUDE to FirewallManager.ConnectionStatus.ALLOW)
-        expected.forEachIndexed { index, (firewall, connection) ->
-            launch(); ready(); compose.onNodeWithTag("app_rule_$index").performScrollTo().assertIsEnabled().performClick()
+        val actions = listOf<Pair<() -> Unit, Pair<FirewallStatus, ConnectionStatus>>>(
+            { compose.onNodeWithTag("app_details_wifi").performScrollTo().performClick(); Unit } to (FirewallStatus.NONE to ConnectionStatus.UNMETERED),
+            { compose.onNodeWithTag("app_details_mobile").performScrollTo().performClick(); Unit } to (FirewallStatus.NONE to ConnectionStatus.METERED),
+            { mode(R.string.app_details_mode_isolate).performScrollTo().performClick(); Unit } to (FirewallStatus.ISOLATE to ConnectionStatus.ALLOW),
+            { mode(R.string.app_details_mode_bypass_dns_firewall).performScrollTo().performClick(); Unit } to (FirewallStatus.BYPASS_DNS_FIREWALL to ConnectionStatus.ALLOW),
+            { mode(R.string.app_details_mode_bypass_universal).performScrollTo().performClick(); Unit } to (FirewallStatus.BYPASS_UNIVERSAL to ConnectionStatus.ALLOW),
+            { mode(R.string.app_details_mode_exclude).performScrollTo().performClick(); Unit } to (FirewallStatus.EXCLUDE to ConnectionStatus.ALLOW))
+        actions.forEachIndexed { index, (act, expected) ->
+            launch(); ready(); act()
             awaitMain { firewallCommands.size == index + 1 }
-            assertEquals(Triple(TEST_UID, firewall, connection), firewallCommands[index])
+            assertEquals(Triple(TEST_UID, expected.first, expected.second), firewallCommands[index])
             destroyCurrent(); assertNoObserverLeaks()
         }
     }
+    @Test fun modeRows_reflectStoredState_andSelectingCurrentModeIsNoop() {
+        appStatus = FirewallStatus.ISOLATE; connStatus = ConnectionStatus.UNMETERED
+        launch(); ready()
+        mode(R.string.app_details_mode_isolate).performScrollTo().assertIsSelected()
+        compose.onNodeWithTag("app_details_wifi").performScrollTo().assertIsOff()
+        compose.onNodeWithText(str(R.string.app_details_network_mode_note)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.app_details_access_blocked_wifi), useUnmergedTree = true).assertIsDisplayed()
+        mode(R.string.app_details_mode_isolate).performClick()
+        compose.waitForIdle()
+        assertTrue(firewallCommands.isEmpty())
+        // back to Normal: allowed everywhere again
+        mode(R.string.app_details_mode_normal).performScrollTo().performClick()
+        awaitMain { firewallCommands.size == 1 }
+        assertEquals(Triple(TEST_UID, FirewallStatus.NONE, ConnectionStatus.ALLOW), firewallCommands[0])
+        mode(R.string.app_details_mode_normal).assertIsSelected()
+    }
+    @Test fun sharedUid_asksBeforeChangingEveryApp() {
+        sharedUidNames = listOf(TEST_NAME, OTHER_NAME)
+        launch(); ready()
+        compose.onNodeWithText(str(R.string.ctbs_app_other_apps, TEST_NAME, "1"), useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("app_details_wifi").performScrollTo().performClick()
+        val title = str(R.string.ctbs_block_other_apps, TEST_NAME, "2")
+        compose.waitUntil(5000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(OTHER_NAME).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.ctbs_dialog_negative_btn)).performClick()
+        compose.waitForIdle()
+        assertTrue(firewallCommands.isEmpty())
+        compose.onNodeWithTag("app_details_wifi").performScrollTo().performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(str(R.string.block)).performClick()
+        awaitMain { firewallCommands.size == 1 }
+        assertEquals(Triple(TEST_UID, FirewallStatus.NONE, ConnectionStatus.UNMETERED), firewallCommands[0])
+    }
+    @Test fun sharedUid_appInfoAsksWhichApp() {
+        sharedUidNames = listOf(TEST_NAME, OTHER_NAME)
+        launch(); ready()
+        compose.onNodeWithContentDescription(str(R.string.about_settings_app_info)).performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText(OTHER_NAME).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(OTHER_NAME).performClick()
+        awaitMain { androidInfoPackages.size == 1 }
+        assertEquals(listOf("pkg.of.$OTHER_NAME"), androidInfoPackages.toList())
+    }
+
+    // ---- proxy ----
+
+    @Test fun proxyRow_showsCurrentProxyInRowAndSummary() {
+        appProxy = ProxyManager.AppProxy.Single(ProxyManager.ID_S5_BASE)
+        launch(); ready()
+        awaitMain { state().ui.proxy !is ProxyRowState.Loading }
+        compose.onNodeWithTag("app_details_proxy").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(S5_ENDPOINT, useUnmergedTree = true).assertIsDisplayed()
+        val summary = str(R.string.app_details_access_allowed) + str(R.string.app_details_summary_separator) +
+            str(R.string.app_details_summary_via, str(R.string.proxy_picker_socks5))
+        compose.onNodeWithText(summary, useUnmergedTree = true).assertExists()
+    }
+    @Test fun proxyRow_legacyMultipleMapping() {
+        appProxy = ProxyManager.AppProxy.Multiple(listOf("wg1", ProxyManager.ID_S5_BASE))
+        launch(); ready()
+        compose.onNodeWithText(str(R.string.proxy_picker_multiple, 2), useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+    }
+    @Test fun proxyPicker_noProxyBypassesAllProxies_andRowRefreshes() {
+        appProxy = ProxyManager.AppProxy.Single(ProxyManager.ID_S5_BASE)
+        launch(); ready()
+        compose.onNodeWithTag("app_details_proxy").performScrollTo().performClick()
+        val title = str(R.string.proxy_picker_title_app, TEST_NAME)
+        compose.waitUntil(5000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText(str(R.string.proxy_picker_bypass)) and isSelectable()).performClick()
+        verify(timeout = 2000, exactly = 1) { FirewallManager.updateIsProxyExcluded(TEST_UID, true) }
+        // the old switch's semantics: the mapping is kept
+        coVerify(exactly = 0) { ProxyManager.setProxyForApp(any(), any(), any(), any()) }
+        awaitMain { !state().showProxyPicker && state().ui.proxy == ProxyRowState.NoProxy }
+        compose.onNodeWithText(str(R.string.proxy_picker_bypass_desc), useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+    }
+    @Test fun proxyPicker_pickingDefaultClearsTheMapping() {
+        appProxy = ProxyManager.AppProxy.Single(ProxyManager.ID_S5_BASE)
+        launch(); ready()
+        compose.onNodeWithTag("app_details_proxy").performScrollTo().performClick()
+        val title = str(R.string.proxy_picker_title_app, TEST_NAME)
+        compose.waitUntil(5000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+        appProxy = ProxyManager.AppProxy.None
+        compose.onNode(hasText(str(R.string.proxy_picker_follow_global)) and isSelectable()).performClick()
+        coVerify(timeout = 2000, exactly = 1) { ProxyManager.setProxyForApp(TEST_UID, TEST_PACKAGE, null, "") }
+        awaitMain { state().ui.proxy == ProxyRowState.Default }
+    }
+
+    // ---- other controls ----
+
+    @Test fun testInteractionResponseTimes() {
+        launch(); ready(); repeat(4) { compose.onNodeWithTag("app_details_temp_allow").performScrollTo().performClick() }
+        compose.onNodeWithTag("app_details_temp_allow").assertIsOff()
+        coVerify(timeout = 2000, exactly = 2) { FirewallManager.updateTempAllow(TEST_UID, true) }
+        coVerify(timeout = 2000, exactly = 2) { FirewallManager.updateTempAllow(TEST_UID, false) }
+    }
+    @Test fun tempAllow_showsWhenItEnds() {
+        launch(); ready()
+        compose.onNodeWithTag("app_details_temp_allow").performScrollTo().performClick().assertIsOn()
+        coVerify(timeout = 2000, exactly = 1) { FirewallManager.updateTempAllow(TEST_UID, true) }
+        compose.onNodeWithText(str(R.string.app_details_access_temp_allowed), useUnmergedTree = true).assertExists()
+        assertTrue(state().ui.tempAllowExpiry > System.currentTimeMillis())
+    }
+    @Test fun notes_saveShowsInHeader_andSurvivesRecreateWhileOpen() {
+        fun frames() = repeat(10) { compose.mainClock.advanceTimeBy(100); shadowOf(Looper.getMainLooper()).idle() }
+        launch(); ready()
+        // the text field never idles under Robolectric; drive frames by hand while it is shown
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag("app_details_notes").performClick()
+        frames()
+        compose.onNodeWithTag("app_notes_input").assertExists()
+        fun draft() = (state().dialog as AppDetailsDialog.Notes).draft
+        draft().value = TextFieldValue("draft text"); frames()
+        controller.recreate()
+        frames()
+        repeat(50) { if (!(state().ui.loaded && state().dialog is AppDetailsDialog.Notes)) { Thread.sleep(50); frames() } }
+        frames()
+        compose.onNodeWithText("draft text").assertExists()
+        assertEquals("draft text", draft().text)
+        // Save does what the dialog's Save button does (clicking inside the open dialog never idles)
+        host().saveNotes("remember this")
+        frames()
+        assertNull(state().dialog)
+        frames()
+        compose.mainClock.autoAdvance = true
+        coVerify(timeout = 2000, exactly = 1) { FirewallManager.updateAppNotes(TEST_UID, TEST_PACKAGE, "remember this") }
+        awaitMain { state().ui.notes == "remember this" }
+        assertNull(state().dialog)
+        compose.onNodeWithText(str(R.string.app_details_notes_label, "remember this"), useUnmergedTree = true).assertIsDisplayed()
+    }
     @Test fun testRecyclerViewsAreInitialized() {
-        // The original list obligation is now real Paging presenters and native populated sections.
         launch(); ready(); showAllSections()
-        listOf(state().aadActiveConnsRv, state().aadAsnRv, state().aadMostContactedDomainRv, state().aadMostContactedIpsRv).forEach {
-            assertEquals(1, requireNotNull(it.adapter).itemCount)
+        listOf(AppInsightsSection.ACTIVE_CONNS, AppInsightsSection.ASN, AppInsightsSection.DOMAINS, AppInsightsSection.IPS).forEach {
+            assertEquals(1, requireNotNull(state().presenters[it]).itemCount)
         }
         compose.onNode(hasText(DOMAIN, substring = true)).performScrollTo().assertIsDisplayed()
         verify { statsDao.getMostDomainsByUid(TEST_UID, any()) }
         verify { connectionDao.getAppIpLogsLimited(TEST_UID, any()) }
     }
+    @Test fun viewMode_switchesToInsights_andPersists() {
+        launch(); ready(); showAllSections()
+        compose.onNode(hasText(str(R.string.app_details_view_insights)) and hasClickAction()).performScrollTo().performClick()
+        assertEquals(StatsViewMode.INSIGHTS.id, statsMode)
+        assertEquals(StatsViewMode.INSIGHTS, state().viewMode)
+        compose.onNodeWithText(str(R.string.top_active_conns)).performScrollTo().assertIsDisplayed()
+    }
+    @Test fun activityLinks_openTheLogScreens() {
+        launch(); ready()
+        compose.onNodeWithTag("app_details_domain_logs").performScrollTo().performClick()
+        val domains = nextStarted()
+        assertEquals(AppWiseDomainLogsActivity::class.java.name, domains.component?.className)
+        assertEquals(TEST_UID, domains.getIntExtra(AppInfoActivity.INTENT_UID, INVALID_UID))
+        assertFalse(domains.hasExtra(AppInfoActivity.INTENT_IS_BLOCKED))
+        compose.onNodeWithTag("app_details_ip_logs").performScrollTo().performClick()
+        assertEquals(AppWiseIpLogsActivity::class.java.name, nextStarted().component?.className)
+        showAllSections()
+        compose.onAllNodesWithText(str(R.string.ssv_see_more)).onLast().performScrollTo().performClick()
+        assertNotNull(shadowOf(host()).nextStartedActivity)
+    }
     @Test fun testActivityHandlesConfigurationChanges() {
         launch(); ready(); controller.recreate(); ready()
-        compose.onNodeWithTag("app_rule_0").assertExists()
+        compose.onNodeWithTag("app_details_wifi").assertExists()
         assertEquals(TEST_UID, host().intent.getIntExtra(AppInfoActivity.INTENT_UID, INVALID_UID))
         assertTrue(firewallCommands.isEmpty())
     }
@@ -345,26 +581,21 @@ class AppInfoActivityTest {
     @Test fun testLaunchWithNegativeUid() { noApp(-1) }
     @Test fun testLaunchWithZeroUid() { launch(0); ready(0); verify(exactly = 1) { ipDao.getAppWiseIpRulesCount(0) } }
     @Test fun testLaunchWithVeryLargeUid() { launch(Int.MAX_VALUE); ready(Int.MAX_VALUE); verify(exactly = 1) { domainDao.getAppWiseDomainRulesCount(Int.MAX_VALUE) } }
-    @Test fun testLaunchWithSystemAppUid() { launch(1000); ready(1000); compose.onNodeWithTag("app_rule_0").assertIsEnabled() }
+    @Test fun testLaunchWithSystemAppUid() { launch(1000); ready(1000); compose.onNodeWithTag("app_details_wifi").assertIsEnabled() }
     @Test fun testActivityStateWithMultipleIntents() {
         launch(); ready()
         val replacement = Intent(host(), AppInfoActivity::class.java).putExtra(AppInfoActivity.INTENT_UID, INVALID_UID)
         compose.runOnIdle { host().intent = replacement }
-        // Baseline only called Activity.setIntent: it did not deliver onNewIntent or recreate.
-        // AppInfo reads UID in onCreate, so the existing mounted content must remain unchanged.
+        // setIntent alone neither delivers onNewIntent nor recreates; the mounted content stays.
         assertSame(replacement, host().intent)
-        assertEquals(INVALID_UID, host().intent.getIntExtra(AppInfoActivity.INTENT_UID, TEST_UID))
         compose.onNodeWithText(TEST_NAME, useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText(host().getString(R.string.app_id_package, TEST_UID, TEST_PACKAGE), useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.app_details_package_uid, TEST_PACKAGE, TEST_UID), useUnmergedTree = true).assertIsDisplayed()
         assertFalse(host().isFinishing)
         assertEquals(Lifecycle.State.RESUMED, host().lifecycle.currentState)
-        // Robolectric 4.17 recreates from ComponentController's original launch Intent, not the
-        // prior Activity's replacement. Verify the real recreated host with that exact UID.
-        assertEquals(TEST_UID, controller.intent.getIntExtra(AppInfoActivity.INTENT_UID, INVALID_UID))
+        // Robolectric recreates from the controller's original launch Intent.
         controller.recreate(); ready()
         assertEquals(TEST_UID, host().intent.getIntExtra(AppInfoActivity.INTENT_UID, INVALID_UID))
-        compose.onNodeWithText(host().getString(R.string.app_id_package, TEST_UID, TEST_PACKAGE), useUnmergedTree = true).assertIsDisplayed()
-        assertNull(ShadowDialog.getShownDialogs().firstOrNull { it.isShowing })
+        assertNull(state().dialog)
         coVerify(exactly = 0) { FirewallManager.getAppInfoByUid(INVALID_UID) }
         assertTrue(firewallCommands.isEmpty())
     }
@@ -374,6 +605,13 @@ class AppInfoActivityTest {
         controller.pause(); assertEquals(Lifecycle.State.STARTED, host().lifecycle.currentState)
         controller.resume(); compose.onNodeWithText(TEST_NAME, useUnmergedTree = true).assertExists()
     }
+    @Test fun resume_reloadsState() {
+        launch(); ready()
+        appStatus = FirewallStatus.BYPASS_UNIVERSAL
+        controller.pause(); controller.resume()
+        awaitMain { state().ui.firewall == FirewallStatus.BYPASS_UNIVERSAL }
+        mode(R.string.app_details_mode_bypass_universal).performScrollTo().assertIsSelected()
+    }
     @Test fun testMemoryPressureHandling() {
         launch(); ready(); host().onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
         assertFalse(host().isFinishing); compose.onNodeWithText(TEST_NAME, useUnmergedTree = true).assertExists()
@@ -381,17 +619,14 @@ class AppInfoActivityTest {
     @Test fun testActivityWithEmptyIntentExtras() { noApp(emptyExtras = true) }
     @Test fun testActivityErrorRecovery() {
         missing = true; noApp(TEST_UID); destroyCurrent()
-        missing = false; launch(); ready(); assertNull(ShadowDialog.getShownDialogs().firstOrNull { it.isShowing })
+        missing = false; launch(); ready(); assertNull(state().dialog)
     }
-
-    // These execute the old workloads deterministically. They DO NOT certify device timings or
-    // heap limits; the seven original numerical acceptance gates are retained in the linked doc.
     @Test fun testActivityLaunchPerformance() { launch(); ready(); assertEquals(Lifecycle.State.RESUMED, host().lifecycle.currentState) }
-    @Test fun testUiRenderingPerformance() { launch(); ready(); showAllSections(); assertNotNull(state().aadAppDetailIcon.drawable) }
+    @Test fun testUiRenderingPerformance() { launch(); ready(); showAllSections(); assertNotNull(state().icon) }
     @Test fun testMultipleActivityInstancesPerformance() {
         val owners = (1..3).map { launch(); ready(); host() }
         assertEquals(3, owners.toSet().size)
-        owners.forEach { assertFalse(it.isDestroyed); assertEquals(TEST_NAME, state(it).aadAppDetailName.text.toString()) }
+        owners.forEach { assertFalse(it.isDestroyed); assertEquals(TEST_NAME, state(it).ui.appName) }
         controllers.asReversed().forEach { it.pause().stop().destroy() }
         assertFalse(ipCount.hasObservers()); assertFalse(domainCount.hasObservers())
     }
@@ -409,33 +644,43 @@ class AppInfoActivityTest {
             showAllSections(); compose.onNodeWithText(TEST_NAME, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         }
     }
-    @Test fun testInteractionResponseTimes() {
-        launch(); ready(); repeat(4) { switchProxy().performScrollTo().performClick() }
-        switchProxy().assertIsOff()
-        verify(timeout = 2000, exactly = 2) { FirewallManager.updateIsProxyExcluded(TEST_UID, true) }
-        verify(timeout = 2000, exactly = 2) { FirewallManager.updateIsProxyExcluded(TEST_UID, false) }
-    }
 
     @Test fun ownUid_warningDefersQueries_andBackFinishesWithoutCommands() {
         launch(Process.myUid())
-        compose.onNodeWithTag("app_warning_proceed").assertIsDisplayed()
-        compose.onNodeWithTag("app_rule_0").assertDoesNotExist()
+        compose.onNodeWithText(str(R.string.app_info_rethink_warning_proceed)).assertIsDisplayed()
+        compose.onNodeWithTag("app_details_wifi").assertDoesNotExist()
         verify(exactly = 0) { ipDao.getAppWiseIpRulesCount(any()) }
         verify(exactly = 0) { domainDao.getAppWiseDomainRulesCount(any()) }
         host().onBackPressedDispatcher.onBackPressed()
         assertTrue(host().isFinishing); assertTrue(firewallCommands.isEmpty())
     }
+    @Test fun ownUid_proceedShowsTheScreen() {
+        apps[Process.myUid()] = syntheticApp(Process.myUid())
+        launch(Process.myUid())
+        compose.onNodeWithText(str(R.string.app_info_rethink_warning_proceed)).performClick()
+        ready(Process.myUid())
+        verify(exactly = 1) { ipDao.getAppWiseIpRulesCount(Process.myUid()) }
+    }
 
     @Test fun unknownUid_excludeRuleIsDisabled_withoutIssuingCommands() {
         unknownPackage = true; launch(); ready()
-        compose.onNodeWithTag("app_rule_5").performScrollTo().assertIsNotEnabled()
+        mode(R.string.app_details_mode_exclude).performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText(str(R.string.exclude_no_package_err_toast), useUnmergedTree = true).assertExists()
         assertTrue(firewallCommands.isEmpty())
+    }
+    @Test fun lockdown_excludeIsDisabledWithReason() {
+        lockdown = true; launch(); ready()
+        mode(R.string.app_details_mode_exclude).performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText(str(R.string.hsf_exclude_error), useUnmergedTree = true).assertExists()
     }
     @Test fun emptySyntheticLogs_hideSections_andViewModeToggle() {
         emptyLogs = true; launch(); ready()
-        awaitMain { state().aadMostContactedIpsRv.adapter != null }
-        compose.onNodeWithText(host().getString(R.string.top_active_conns)).assertDoesNotExist()
-        compose.onNodeWithContentDescription(host().getString(R.string.cd_stats_switch_to_insights)).assertDoesNotExist()
+        awaitMain { state().sectionHasData[AppInsightsSection.IPS] == false }
+        compose.onNodeWithText(str(R.string.top_active_conns)).assertDoesNotExist()
+        compose.onNodeWithText(str(R.string.app_details_view_insights)).assertDoesNotExist()
+        compose.onNodeWithText(str(R.string.app_details_activity_empty_title)).performScrollTo().assertIsDisplayed()
+        // the log screens stay reachable
+        compose.onNodeWithTag("app_details_domain_logs").performScrollTo().assertIsDisplayed()
     }
     @Test fun ruleCounts_reemitThroughActualLifecycleObservers() {
         launch(); ready(); compose.runOnIdle { ipCount.value = 8; domainCount.value = 13 }
@@ -445,13 +690,13 @@ class AppInfoActivityTest {
     }
     @Test fun customRulesNavigation_preservesTabAndUidWithoutLaunchingTarget() {
         launch(); ready()
-        compose.onNodeWithText(host().getString(R.string.lbl_ip_rules)).performScrollTo().performClick()
-        val ip = requireNotNull(shadowOf(host()).nextStartedActivity)
+        compose.onNodeWithTag("app_details_ip_rules").performScrollTo().performClick()
+        val ip = nextStarted()
         assertEquals(CustomRulesActivity::class.java.name, ip.component?.className)
         assertEquals(TEST_UID, ip.getIntExtra(Constants.INTENT_UID, INVALID_UID))
         assertEquals(CustomRulesActivity.Tabs.IP_RULES.screen, ip.getIntExtra(Constants.VIEW_PAGER_SCREEN_TO_LOAD, -1))
-        compose.onNodeWithText(host().getString(R.string.lbl_domain_rules)).performScrollTo().performClick()
-        val domain = requireNotNull(shadowOf(host()).nextStartedActivity)
+        compose.onNodeWithTag("app_details_domain_rules").performScrollTo().performClick()
+        val domain = nextStarted()
         assertEquals(CustomRulesActivity.Tabs.DOMAIN_RULES.screen, domain.getIntExtra(Constants.VIEW_PAGER_SCREEN_TO_LOAD, -1))
         assertEquals(TEST_UID, domain.getIntExtra(Constants.INTENT_UID, INVALID_UID))
     }

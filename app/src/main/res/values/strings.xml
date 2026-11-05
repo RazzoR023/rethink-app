@@ -3123,4 +3123,61 @@
     <string name="proxy_picker_empty_body" translatable="true">Add a WireGuard config, a SOCKS5 proxy or Orbot under Configure, then Proxy.</string>
     <string name="proxy_picker_loading" translatable="true">Loading proxies…</string>
 
+    <!-- app details (ui/compose/appdetails/AppDetailsScreen.kt) -->
+    <string name="app_details_package_uid" translatable="false">%1$s · uid %2$d</string>
+    <string name="app_details_shared_uid" translatable="true">Shares its uid with %1$s. Rules apply to all of them.</string>
+    <string name="app_details_access_allowed" translatable="true">Allowed</string>
+    <string name="app_details_access_blocked" translatable="true">Blocked</string>
+    <string name="app_details_access_blocked_wifi" translatable="true">Blocked on Wi-Fi</string>
+    <string name="app_details_access_blocked_mobile" translatable="true">Blocked on mobile data</string>
+    <string name="app_details_access_isolated" translatable="true">Isolated</string>
+    <string name="app_details_access_bypass_universal" translatable="true">Bypasses universal rules</string>
+    <string name="app_details_access_bypass_dns_firewall" translatable="true">Bypasses DNS &amp; firewall</string>
+    <string name="app_details_access_excluded" translatable="true">Excluded from the VPN</string>
+    <string name="app_details_access_temp_allowed" translatable="true">Temporarily allowed</string>
+    <string name="app_details_summary_via" translatable="true">via %1$s</string>
+    <string name="app_details_summary_direct" translatable="true">no proxy</string>
+    <string name="app_details_summary_multiple" translatable="true">via %1$d proxies</string>
+    <string name="app_details_summary_separator" translatable="false">" · "</string>
+    <string name="app_details_usage" translatable="false">↑ %1$s   ↓ %2$s</string>
+    <string name="app_details_usage_cd" translatable="true">Uploaded %1$s, downloaded %2$s</string>
+    <string name="app_details_rules_changed" translatable="true">Rules changed %1$s</string>
+    <string name="app_details_notes_label" translatable="true">Notes: %1$s</string>
+    <string name="app_details_close_connections" translatable="true">Close connections</string>
+    <string name="app_details_section_network" translatable="true">Network access</string>
+    <string name="app_details_wifi" translatable="true">Wi-Fi</string>
+    <string name="app_details_mobile_data" translatable="true">Mobile data</string>
+    <string name="app_details_allowed" translatable="true">Allowed</string>
+    <string name="app_details_blocked" translatable="true">Blocked</string>
+    <string name="app_details_network_mode_note" translatable="true">Changing Wi-Fi or mobile data access sets the mode back to Normal.</string>
+    <string name="app_details_temp_allow_until" translatable="true">Allowed until %1$s</string>
+    <string name="app_details_section_mode" translatable="true">Mode</string>
+    <string name="app_details_mode_normal" translatable="true">Normal</string>
+    <string name="app_details_mode_normal_desc" translatable="true">Firewall, DNS and your rules apply</string>
+    <string name="app_details_mode_isolate" translatable="true">Isolate</string>
+    <string name="app_details_mode_isolate_desc" translatable="true">Only trusted IPs and domains are allowed</string>
+    <string name="app_details_mode_bypass_dns_firewall" translatable="true">Bypass DNS &amp; firewall</string>
+    <string name="app_details_mode_bypass_dns_firewall_desc" translatable="true">Skips universal DNS and firewall rules</string>
+    <string name="app_details_mode_bypass_universal" translatable="true">Bypass universal rules</string>
+    <string name="app_details_mode_bypass_universal_desc" translatable="true">Skips the universal firewall rules</string>
+    <string name="app_details_mode_exclude" translatable="true">Exclude from VPN</string>
+    <string name="app_details_mode_exclude_desc" translatable="true">Traffic skips Rethink: no DNS, firewall or proxy</string>
+    <string name="app_details_section_proxy" translatable="true">Proxy</string>
+    <string name="app_details_proxy_rpn" translatable="true">Also via %1$s</string>
+    <string name="app_details_proxy_excluded_note" translatable="true">Not used while the app is excluded from the VPN.</string>
+    <string name="app_details_section_rules" translatable="true">Rules for this app</string>
+    <string name="app_details_ip_rules" translatable="true">IP rules</string>
+    <string name="app_details_ip_rules_desc" translatable="true">Block or trust IPs and ports</string>
+    <string name="app_details_domain_rules" translatable="true">Domain rules</string>
+    <string name="app_details_domain_rules_desc" translatable="true">Block or trust domains</string>
+    <string name="app_details_section_activity" translatable="true">Activity</string>
+    <string name="app_details_view_list" translatable="true">List</string>
+    <string name="app_details_view_insights" translatable="true">Insights</string>
+    <string name="app_details_domain_logs" translatable="true">Domains</string>
+    <string name="app_details_domain_logs_desc" translatable="true">Every domain this app connected to</string>
+    <string name="app_details_ip_logs" translatable="true">IP addresses</string>
+    <string name="app_details_ip_logs_desc" translatable="true">Every IP address this app connected to</string>
+    <string name="app_details_activity_empty_title" translatable="true">No recent activity</string>
+    <string name="app_details_activity_empty_body" translatable="true">Connections this app makes while Rethink is on show up here.</string>
+
 </resources>

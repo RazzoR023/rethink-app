@@ -238,7 +238,7 @@ private fun baseOptions(mode: ProxyPickerMode): List<ChoiceOption<Pick>> = when 
 private fun proxyOptions(proxies: List<ProxyChoices.Choice>, selected: Pick?): List<ChoiceOption<Pick>> {
     return proxies.map { p ->
         val pick = Pick.Via(p.proxyId)
-        var description = p.description()
+        var description = p.displayDescription()
         // a chosen proxy that is off does nothing until it is turned on; say so
         if (!p.enabled && p.kind != ProxyChoices.Kind.OTHER && selected == pick) {
             description = listOfNotNull(description, stringResource(R.string.proxy_picker_off_note)).joinToString("\n")
@@ -246,7 +246,7 @@ private fun proxyOptions(proxies: List<ProxyChoices.Choice>, selected: Pick?): L
         val status = p.health.toStatus()
         ChoiceOption(
             value = pick,
-            title = p.title(),
+            title = p.displayTitle(),
             description = description,
             trailing = { StatusChip(status) },
         )
@@ -254,7 +254,7 @@ private fun proxyOptions(proxies: List<ProxyChoices.Choice>, selected: Pick?): L
 }
 
 @Composable
-private fun ProxyChoices.Choice.title(): String = when (kind) {
+internal fun ProxyChoices.Choice.displayTitle(): String = when (kind) {
     ProxyChoices.Kind.WIREGUARD -> name.ifBlank { proxyId }
     ProxyChoices.Kind.SOCKS5 -> stringResource(R.string.proxy_picker_socks5)
     ProxyChoices.Kind.ORBOT -> stringResource(R.string.proxy_picker_orbot)
@@ -262,7 +262,7 @@ private fun ProxyChoices.Choice.title(): String = when (kind) {
 }
 
 @Composable
-private fun ProxyChoices.Choice.description(): String? = when (kind) {
+internal fun ProxyChoices.Choice.displayDescription(): String? = when (kind) {
     ProxyChoices.Kind.WIREGUARD -> {
         val flags = listOfNotNull(
             stringResource(R.string.proxy_picker_wireguard),

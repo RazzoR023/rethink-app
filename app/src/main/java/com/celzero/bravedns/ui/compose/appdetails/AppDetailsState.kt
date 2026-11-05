@@ -1,92 +1,82 @@
+/* Copyright 2026 RethinkDNS and its authors. Licensed under Apache-2.0. */
 package com.celzero.bravedns.ui.compose.appdetails
-import androidx.compose.runtime.*
-import android.view.View
-import com.celzero.bravedns.ui.compose.wireguard.WgControlState
-import com.celzero.bravedns.ui.stats.StatsViewMode
+
+import android.graphics.drawable.Drawable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.celzero.bravedns.data.AppConnection
+import com.celzero.bravedns.service.ProxyChoices
+import com.celzero.bravedns.ui.stats.StatsViewMode
+
+/** Holds a Paging presenter for a Compose list (also used by the per-app log screens). */
 class AppDetailListState { var adapter by mutableStateOf<AppConnectionsPresenter?>(null) }
+
+/** A dialog the app details screen is showing. */
+sealed interface AppDetailsDialog {
+    /** The app is gone (uninstalled / invalid uid); OK finishes the screen. */
+    data object NoApp : AppDetailsDialog
+    data class Notes(val draft: AppNotesDraft) : AppDetailsDialog
+    data object CloseConnections : AppDetailsDialog
+    /** Shared uid: pick which app's Android settings to open. */
+    data class PickAppInfo(val appNames: List<String>) : AppDetailsDialog
+    /** Shared uid: a firewall change applies to every app of the uid; confirm first. */
+    data class ConfirmSharedUid(val appNames: List<String>, val change: FirewallChange) : AppDetailsDialog
+}
+
+/**
+ * Observable state of the app details screen (AppInfoActivity owns it and does the I/O;
+ * AppDetailsScreen draws it). Replaces the per-view WgControlState shims of the Compose port.
+ */
 class AppDetailsState {
-    var mode by mutableStateOf(StatsViewMode.LIST)
-    var onMode: (StatsViewMode) -> Unit = {}
+    var ui by mutableStateOf(AppDetailsUi())
+    var icon by mutableStateOf<Drawable?>(null)
+
+    /** Shown instead of the screen when the app is Rethink itself, until acknowledged. */
+    var showRethinkWarning by mutableStateOf(false)
+
+    var dialog by mutableStateOf<AppDetailsDialog?>(null)
+    var showProxyPicker by mutableStateOf(false)
+
+    /** List or Insights; mirrors the stats screen's persisted preference. */
+    var viewMode by mutableStateOf(StatsViewMode.LIST)
+
+    /** Live list presenter of each activity section that is wired up. */
+    val presenters = mutableStateMapOf<AppInsightsSection, AppConnectionsPresenter>()
+
+    /** Sections whose data has loaded and is not empty; others stay hidden. */
+    val sectionHasData = mutableStateMapOf<AppInsightsSection, Boolean>()
+
+    /** Latest items per section, for the Insights view. */
     val insightsSnapshots = mutableStateMapOf<AppInsightsSection, List<AppConnection>>()
-    val aadActiveConnsChip = WgControlState()
-    val aadActiveConnsRl = WgControlState()
-    val aadActiveConnsRv = AppDetailListState()
-    val aadAppDetailIcon = WgControlState()
-    val aadAppDetailName = WgControlState()
-    val aadAppInfoIcon = WgControlState()
-    val aadAppParentRl = WgControlState()
-    val aadAppSettingsBlockMd = WgControlState()
-    val aadAppSettingsBlockWifi = WgControlState()
-    val aadAppSettingsBypassDnsFirewall = WgControlState()
-    val aadAppSettingsBypassUniv = WgControlState()
-    val aadAppSettingsExclude = WgControlState()
-    val aadAppSettingsIsolate = WgControlState()
-    val aadAsnChip = WgControlState()
-    val aadAsnRl = WgControlState()
-    val aadAsnRv = AppDetailListState()
-    val aadBlockedAsnChip = WgControlState()
-    val aadBlockedAsnRl = WgControlState()
-    val aadBlockedAsnRv = AppDetailListState()
-    val aadBlockedDomainsChip = WgControlState()
-    val aadBlockedDomainsRl = WgControlState()
-    val aadBlockedDomainsRv = AppDetailListState()
-    val aadBlockedIpsChip = WgControlState()
-    val aadBlockedIpsRl = WgControlState()
-    val aadBlockedIpsRv = AppDetailListState()
-    val aadBlocklistChip = WgControlState()
-    val aadBlocklistRl = WgControlState()
-    val aadBlocklistRv = AppDetailListState()
-    val aadCloseConnsChip = WgControlState()
-    val aadCountriesChip = WgControlState()
-    val aadDataUsageStatus = WgControlState()
-    val aadDomainBlockCard = WgControlState()
-    val aadDomainBlockHeader = WgControlState()
-    val aadDomainsChip = WgControlState()
-    val aadFirewallStatus = WgControlState()
-    val aadIaActiveConnsChip = WgControlState()
-    val aadIaAsnChip = WgControlState()
-    val aadIaBlockedAsnChip = WgControlState()
-    val aadIaBlockedDomainsChip = WgControlState()
-    val aadIaBlockedIpsChip = WgControlState()
-    val aadIaBlocklistChip = WgControlState()
-    val aadIaCountriesChip = WgControlState()
-    val aadIaDomainsChip = WgControlState()
-    val aadIaIpsChip = WgControlState()
-    val aadInsightsContainer = WgControlState()
-    val aadIpBlockCard = WgControlState()
-    val aadIpBlockHeader = WgControlState()
-    val aadIpsChip = WgControlState()
-    val aadListContainer = WgControlState()
-    val aadMostContactedCountriesRl = WgControlState()
-    val aadMostContactedCountriesRv = AppDetailListState()
-    val aadMostContactedDomainRl = WgControlState()
-    val aadMostContactedDomainRv = AppDetailListState()
-    val aadMostContactedIpsRl = WgControlState()
-    val aadMostContactedIpsRv = AppDetailListState()
-    val aadNotesChip = WgControlState()
-    val aadPkgName = WgControlState()
-    val aadProxyDetails = WgControlState()
-    val aadRethinkWarningContainer = WgControlState()
-    val aadRethinkWarningProceed = WgControlState()
-    val aadViewModeToggleGroup = WgControlState()
-    val excludeProxyRl = WgControlState()
-    val excludeProxySwitch = WgControlState(checkable = true)
-    val tempAllowDesc = WgControlState()
-    val tempAllowRl = WgControlState()
-    val tempAllowSwitch = WgControlState(checkable = true)
-    init {
-        aadRethinkWarningContainer.visibility = View.GONE
-        aadProxyDetails.visibility = View.GONE
-        aadActiveConnsRl.visibility = View.GONE
-        aadMostContactedCountriesRl.visibility = View.GONE
-        aadAsnRl.visibility = View.GONE
-        aadBlockedAsnRl.visibility = View.GONE
-        aadBlocklistRl.visibility = View.GONE
-        aadMostContactedDomainRl.visibility = View.GONE
-        aadBlockedDomainsRl.visibility = View.GONE
-        aadMostContactedIpsRl.visibility = View.GONE
-        aadBlockedIpsRl.visibility = View.GONE
-        aadInsightsContainer.visibility = View.GONE
-    }
+
+    val anyActivity: Boolean get() = sectionHasData.values.any { it }
+}
+
+/** What the screen asks its host to do. */
+interface AppDetailsActions {
+    fun acknowledgeRethinkWarning()
+    fun openAndroidAppInfo()
+    fun openAndroidAppInfoFor(appName: String)
+    fun openNotes()
+    fun saveNotes(text: String)
+    fun dismissDialog()
+    fun finishNoApp()
+    fun requestCloseConnections()
+    fun closeConnections()
+    fun setTempAllow(enabled: Boolean)
+    fun toggleWifi()
+    fun toggleMobileData()
+    fun selectMode(mode: AppNetworkMode)
+    fun confirmFirewallChange(change: FirewallChange)
+    fun openProxyPicker()
+    fun onProxyChanged(pick: ProxyChoices.Pick)
+    fun closeProxyPicker()
+    fun openIpRules()
+    fun openDomainRules()
+    fun setViewMode(mode: StatsViewMode)
+    fun openSection(section: AppInsightsSection)
+    fun openDomainLogs()
+    fun openIpLogs()
 }
