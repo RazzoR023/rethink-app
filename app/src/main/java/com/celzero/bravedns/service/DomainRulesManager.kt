@@ -59,6 +59,15 @@ object DomainRulesManager : KoinComponent {
 
     private const val KV_SEP = ":"
 
+    private val NO_PROXY = Pair("", "")
+
+    // true once any rule in the trie may carry a proxyId / proxyCC; lets the per-connection
+    // proxy look-up (getProxyForDomain) skip the trie when no rule routes via a proxy (the
+    // common case). set on every insert of such a rule, recomputed on load(), reset when the
+    // trie is cleared; never reset on single deletes (a stale true only costs a trie look-up)
+    @Volatile
+    private var mayHaveProxyRules = false
+
     enum class Status(val id: Int) {
         NONE(0),
         BLOCK(1),
@@ -112,10 +121,15 @@ object DomainRulesManager : KoinComponent {
     fun updateTrie(cd: CustomDomain) {
         val key = mkTrieKey(cd.domain, cd.uid)
         val value = mkTrieValue(cd.status.toString(), cd.proxyId, cd.proxyCC)
+        noteProxy(cd)
         trie.set(key, value)
     }
 
-    private fun mkTrieKey(d: String, uid: Int): String? {
+    private fun noteProxy(cd: CustomDomain) {
+        if (cd.proxyId.isNotEmpty() || cd.proxyCC.isNotEmpty()) mayHaveProxyRules = true
+    }
+
+    private fun mkTrieKey(d: String, uid: Int): String {
         // *.google.co.uk -> .google.co.uk,<uid>
         // not supported by IpTrie: google.* -> google.,<uid>
         val domain = d.removePrefix("*")
@@ -136,6 +150,7 @@ object DomainRulesManager : KoinComponent {
         trie.clear()
         trustedTrie.clear()
         trustedMap.clear()
+        mayHaveProxyRules = false
         db.getAllCustomDomains().forEach { cd ->
             // adding as part of defensive programming, even adding these rules to cache will
             // not cause any issues, but to avoid unnecessary entries in the trie, skipping these
@@ -146,6 +161,7 @@ object DomainRulesManager : KoinComponent {
             }
             val key = mkTrieKey(cd.domain, cd.uid)
             val value = mkTrieValue(cd.status.toString(), cd.proxyId, cd.proxyCC)
+            noteProxy(cd)
             trie.set(key, value)
             maybeAddToTrustedMap(cd)
             if (cd.proxyCC.isNotEmpty()) selectedCCs.add(cd.proxyCC)
@@ -277,42 +293,53 @@ object DomainRulesManager : KoinComponent {
         }
     }
 
+    /**
+     * Per-connection proxy look-up for [RuleProxyResolver]: (proxyId, proxyCC) of the most
+     * specific rule of [uid] for [domain] that routes via a proxy (sets a proxyId, a proxyCC or
+     * both); ("", "") if none. The exact domain is checked first, then the wildcard rules from
+     * the most to the least specific (*.b.example.com, *.example.com, *.com) as status() does.
+     * Rules without a proxy (status-only) do not hide a less specific proxy rule.
+     */
     fun getProxyForDomain(uid: Int, domain: String): Pair<String, String> {
-        try {
-            val key = mkTrieKey(domain, uid)
-            var proxyId = ""
-            var proxyCC = ""
-            val match = trie.get(key)
-            if (match.isNullOrEmpty()) {
-                return Pair("", "")
-            }
-            val parts = match.split(KV_SEP)
-
-            if (parts.size <= 2) return Pair("", "")
-
-            // not expecting index out of bounds here, as the value is constructed while inserting
-            // still adding try-catch to avoid any crashes
-            // status:proxyId:proxyCC
-            proxyId = parts[1]
-            proxyCC = parts[2]
-
-            // empty proxyId means no proxy rule for the domain, check for wildcard
-            if (proxyId.isNotEmpty() || proxyCC.isNotEmpty()) {
-                return Pair(proxyId, proxyCC)
-            } else {
-                val wild = trie.getAny(key)
-                if (wild.isNullOrEmpty()) return Pair("", "")
-
-                val wildParts = wild.split(KV_SEP)
-                if (wildParts.size <= 2) return Pair("", "")
-
-                proxyId = wildParts[1]
-                proxyCC = wildParts[2]
-                return Pair(proxyId, proxyCC)
-            }
-        } catch (_: Exception) {
-            return Pair("", "")
+        if (!mayHaveProxyRules) return NO_PROXY
+        return try {
+            findProxyForDomain(uid, domain) { trie.get(it) }
+        } catch (e: Exception) {
+            Logger.w(LOG_TAG_DNS, "err getProxyForDomain($domain, $uid): ${e.message}")
+            NO_PROXY
         }
+    }
+
+    // pure part of getProxyForDomain; [get] returns the trie value for a trie key or null / ""
+    internal fun findProxyForDomain(
+        uid: Int,
+        domain: String,
+        get: (String) -> String?
+    ): Pair<String, String> {
+        val d = domain.trim().trimEnd('.').lowercase(Locale.ROOT)
+        if (d.isEmpty()) return NO_PROXY
+
+        proxyOf(get(mkTrieKey(d, uid)))?.let { return it }
+
+        // wildcard "*.example.com" is keyed as ".example.com" (see mkTrieKey); it matches
+        // sub-domains of example.com, not example.com itself
+        var i = d.indexOf('.')
+        while (i >= 0 && i < d.length - 1) {
+            proxyOf(get(mkTrieKey(d.substring(i), uid)))?.let { return it }
+            i = d.indexOf('.', i + 1)
+        }
+        return NO_PROXY
+    }
+
+    // trie value is status:proxyId:proxyCC; null when the rule doesn't route via a proxy
+    private fun proxyOf(v: String?): Pair<String, String>? {
+        if (v.isNullOrEmpty()) return null
+        val parts = v.split(KV_SEP)
+        if (parts.size < 3) return null
+        val proxyId = parts[1]
+        val proxyCC = parts[2]
+        if (proxyId.isEmpty() && proxyCC.isEmpty()) return null
+        return Pair(proxyId, proxyCC)
     }
 
     fun isDomainTrusted(d: String?): Boolean {
@@ -478,6 +505,7 @@ object DomainRulesManager : KoinComponent {
     suspend fun deleteAllRules() {
         db.deleteAllRules()
         trie.clear()
+        mayHaveProxyRules = false
         trustedMap.clear()
         trustedTrie.clear()
     }
@@ -540,6 +568,7 @@ object DomainRulesManager : KoinComponent {
         desc.forEach { cd ->
             val key = mkTrieKey(cd.domain, cd.uid)
             val value = mkTrieValue(cd.status.toString(), cd.proxyId, cd.proxyCC)
+            noteProxy(cd)
             trie.set(key, value)
             maybeAddToTrustedMap(cd)
         }

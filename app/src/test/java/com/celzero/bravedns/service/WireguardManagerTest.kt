@@ -2275,4 +2275,107 @@ class WireguardManagerTest : KoinTest {
 
         assertTrue("Complete comprehensive test coverage achieved successfully", true)
     }
+
+    // ===== PER-RULE PROXY (getConfigIdsForRule / isAppInLockdownConfig) =====
+    // a custom ip / domain rule routing via a wireguard config uses the same eligibility
+    // checks as app configs (canUseConfig / isEligibleForNetwork / lockdown)
+
+    private val wg1 = "${ID_WG_BASE}1"
+    private val wg2 = "${ID_WG_BASE}2"
+
+    @Test
+    fun `rule wg - active and eligible returns the config then default`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true), setupMockConfig(1))
+        assertEquals(listOf(wg1, Backend.Exit), WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", Backend.Exit))
+    }
+
+    @Test
+    fun `rule wg - empty default is not appended`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true), setupMockConfig(1))
+        assertEquals(listOf(wg1), WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", ""))
+    }
+
+    @Test
+    fun `rule wg - eligible catch-all configs follow the rule config`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true), setupMockConfig(1))
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 2, isActive = true, isCatchAll = true), setupMockConfig(2))
+        assertEquals(listOf(wg1, wg2, Backend.Exit), WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", Backend.Exit))
+    }
+
+    @Test
+    fun `rule wg - lockdown catch-all suppresses the default`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true), setupMockConfig(1))
+        addConfigToManager(
+            createMockWgConfigFilesImmutable(id = 2, isActive = true, isCatchAll = true, isLockdown = true),
+            setupMockConfig(2)
+        )
+        assertEquals(listOf(wg1, wg2), WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", Backend.Exit))
+    }
+
+    @Test
+    fun `rule wg - lockdown config eligible returns only the config`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true, isLockdown = true), setupMockConfig(1))
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 2, isActive = true, isCatchAll = true), setupMockConfig(2))
+        assertEquals(listOf(wg1), WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", Backend.Exit))
+    }
+
+    @Test
+    fun `rule wg - lockdown config not eligible on this network blocks`() {
+        // mobile-only lockdown config while on wifi
+        addConfigToManager(
+            createMockWgConfigFilesImmutable(id = 1, isActive = true, isLockdown = true, useOnlyOnMetered = true),
+            setupMockConfig(1)
+        )
+        assertEquals(listOf(Backend.Block), WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", Backend.Exit))
+        // eligible on mobile
+        assertEquals(listOf(wg1), WireguardManager.getConfigIdsForRule(wg1, true, "", Backend.Exit))
+    }
+
+    @Test
+    fun `rule wg - inactive config falls through`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = false), setupMockConfig(1))
+        assertTrue(WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", Backend.Exit).isEmpty())
+    }
+
+    @Test
+    fun `rule wg - config not eligible on this network falls through`() {
+        addConfigToManager(
+            createMockWgConfigFilesImmutable(id = 1, isActive = true, useOnlyOnMetered = true),
+            setupMockConfig(1)
+        )
+        assertTrue(WireguardManager.getConfigIdsForRule(wg1, false, "MyWiFi", Backend.Exit).isEmpty())
+        assertEquals(listOf(wg1, Backend.Exit), WireguardManager.getConfigIdsForRule(wg1, true, "", Backend.Exit))
+    }
+
+    @Test
+    fun `rule wg - unknown or non-wireguard ids fall through`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true), setupMockConfig(1))
+        assertTrue(WireguardManager.getConfigIdsForRule("${ID_WG_BASE}9", false, "", Backend.Exit).isEmpty())
+        assertTrue(WireguardManager.getConfigIdsForRule(ProxyManager.ID_S5_BASE, false, "", Backend.Exit).isEmpty())
+        assertTrue(WireguardManager.getConfigIdsForRule(ID_WG_BASE, false, "", Backend.Exit).isEmpty())
+        assertTrue(WireguardManager.getConfigIdsForRule("", false, "", Backend.Exit).isEmpty())
+    }
+
+    @Test
+    fun `rule wg - one-wg mode falls through`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true, oneWireGuard = true), setupMockConfig(1))
+        assertTrue(WireguardManager.getConfigIdsForRule(wg1, false, "", Backend.Exit).isEmpty())
+    }
+
+    @Test
+    fun `isAppInLockdownConfig - true only for an app mapped to a lockdown config`() {
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 1, isActive = true, isLockdown = true), setupMockConfig(1))
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 2, isActive = true), setupMockConfig(2))
+        mockkObject(ProxyManager)
+        try {
+            every { ProxyManager.getProxyIdsForApp(100) } returns setOf(wg1)
+            every { ProxyManager.getProxyIdsForApp(101) } returns setOf(wg2, ProxyManager.ID_S5_BASE)
+            every { ProxyManager.getProxyIdsForApp(102) } returns emptySet()
+            assertTrue(WireguardManager.isAppInLockdownConfig(100))
+            assertFalse(WireguardManager.isAppInLockdownConfig(101))
+            assertFalse(WireguardManager.isAppInLockdownConfig(102))
+        } finally {
+            unmockkObject(ProxyManager)
+        }
+    }
 }

@@ -1188,6 +1188,35 @@ object TunFlowManager : KoinComponent {
             return persistAndConstructFlowResponse(ctx, connTracker, baseOrAutoOrExit, connId, uid, forUpstreamAnswer)
         }
 
+        // default appended after wireguard ids; none with rpn or under global lockdown
+        val defProxy = if (rpnIds.isNotEmpty() || isGlobalLockdown) "" else baseOrAutoOrExit
+
+        // per-rule proxy: a domain / ip rule routing via a proxy takes precedence over the app's
+        // own proxy mapping and the global proxies (see RuleProxyResolver for the order).
+        // rethink's own traffic and apps excluded from proxy (handled above) never take it
+        if (uid != rethinkUid) {
+            val rule = RuleProxyResolver.findRuleProxy(uid, connTracker.query, connTracker.destIP, connTracker.destPort)
+            if (rule != null) {
+                val env = ruleProxyEnv(uid, rpnIds, usesMobileNw, ssid, defProxy)
+                when (val d = RuleProxyResolver.decide(rule, env)) {
+                    is RuleProxyResolver.Decision.Block -> {
+                        connTracker.isBlocked = true
+                        connTracker.blockedByRule = FirewallRuleset.RULE17.id
+                        logd("flow/upstream: rule proxy ${rule.proxyId} (${rule.level}, ${rule.ruleUid}) lockdown not eligible, block $connId, $uid, ${connTracker.query}, ${connTracker.destIP}")
+                        return persistAndConstructFlowResponse(ctx, connTracker, Backend.Block, connId, uid, forUpstreamAnswer)
+                    }
+                    is RuleProxyResolver.Decision.Route -> {
+                        val ids = d.pids.joinToString(",")
+                        logd("flow/upstream: rule proxy ${rule.proxyId} (${rule.level}, ${rule.ruleUid}), returning $ids for $connId, $uid, ${connTracker.query}, ${connTracker.destIP}")
+                        return persistAndConstructFlowResponse(ctx, connTracker, ids, connId, uid, forUpstreamAnswer)
+                    }
+                    is RuleProxyResolver.Decision.None -> {
+                        logd("flow/upstream: rule proxy ${rule.proxyId} (${rule.level}, ${rule.ruleUid}) not usable, fall-through $connId, $uid, ${connTracker.query}, ${connTracker.destIP}")
+                    }
+                }
+            }
+        }
+
         // custom socks5 routes only the apps mapped to it. an explicit app mapping takes
         // precedence over wireguard catch-all / one-wg, so check it before wireguard.
         if (appConfig.isCustomSocks5Enabled() && ProxyManager.isAppRoutedViaSocks5(uid)) {
@@ -1201,7 +1230,6 @@ object TunFlowManager : KoinComponent {
             }
         }
 
-        val defProxy = if (rpnIds.isNotEmpty() || isGlobalLockdown) "" else baseOrAutoOrExit
         val wgs = WireguardManager.getAllPossibleConfigIdsForApp(uid, connTracker.destIP, connTracker.destPort, connTracker.query.orEmpty(), usesMobileNw, ssid, defProxy)
         if (wgs.isNotEmpty() && wgs.first() != baseOrAutoOrExit) {
             // canRoute may fail for all configs.
@@ -1367,6 +1395,53 @@ object TunFlowManager : KoinComponent {
         }
         logd("flow/upstream: no proxies, $baseOrAutoOrExit, $connId, $uid, , ${connTracker.query}, ${connTracker.destIP}, returning $baseOrAutoOrExit")
         return persistAndConstructFlowResponse(ctx, connTracker, baseOrAutoOrExit, connId, uid, forUpstreamAnswer)
+    }
+
+    // proxy state for RuleProxyResolver.decide(); built only when a rule proxy matched
+    private fun ruleProxyEnv(
+        uid: Int,
+        rpnIds: List<String>,
+        usesMobileNw: Boolean,
+        ssid: String,
+        defProxy: String
+    ): RuleProxyResolver.Env {
+        return object : RuleProxyResolver.Env {
+            override val rpnIds: List<String> = rpnIds
+
+            override suspend fun isAppExcludedFromProxy(): Boolean {
+                return FirewallManager.isAppExcludedFromProxy(uid)
+            }
+
+            override fun isAppInWgLockdown(): Boolean {
+                return WireguardManager.isAppInLockdownConfig(uid)
+            }
+
+            override fun wgIds(pid: String): List<String> {
+                return WireguardManager.getConfigIdsForRule(pid, usesMobileNw, ssid, defProxy)
+            }
+
+            override suspend fun endpoint(pid: String): RuleProxyResolver.Endpoint? {
+                return when (pid) {
+                    ProxyManager.ID_S5_BASE -> {
+                        val on = appConfig.isCustomSocks5Enabled()
+                        RuleProxyResolver.Endpoint(on, if (on) appConfig.getSocks5ProxyDetails()?.proxyAppName else null)
+                    }
+                    ProxyManager.ID_ORBOT_BASE -> {
+                        val on = appConfig.isOrbotProxyEnabled()
+                        RuleProxyResolver.Endpoint(on, if (on) appConfig.getConnectedOrbotProxy()?.proxyAppName else null)
+                    }
+                    ProxyManager.ID_HTTP_BASE -> {
+                        val on = appConfig.isCustomHttpProxyEnabled()
+                        RuleProxyResolver.Endpoint(on, if (on) appConfig.getHttpProxyDetails()?.proxyAppName else null)
+                    }
+                    else -> null
+                }
+            }
+
+            override suspend fun packageName(): String? {
+                return FirewallManager.getPackageNameByUid(uid)
+            }
+        }
     }
 
     suspend fun isSpecialApp(uid: Int): Boolean {

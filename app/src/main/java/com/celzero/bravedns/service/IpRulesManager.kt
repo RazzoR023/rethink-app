@@ -52,6 +52,19 @@ object IpRulesManager : KoinComponent {
     private val resultsCache: Cache<CacheKey, IpRuleStatus> =
         CacheBuilder.newBuilder().maximumSize(CACHE_MAX_SIZE).build()
 
+    // per-rule proxy look-ups (see getProxyForIpPort), cleared along with resultsCache
+    private val proxyResultsCache: Cache<CacheKey, Pair<String, String>> =
+        CacheBuilder.newBuilder().maximumSize(CACHE_MAX_SIZE).build()
+
+    private val NO_PROXY = Pair("", "")
+
+    // true once any rule in the tree may carry a proxyId / proxyCC; lets the per-connection
+    // proxy look-up skip the tree entirely when no rule routes via a proxy (the common case).
+    // set on every insert of such a rule and recomputed on load(); never reset on deletes (a
+    // stale true only costs a tree look-up)
+    @Volatile
+    private var mayHaveProxyRules = false
+
     private val selectedCCs = mutableSetOf<String>()
 
     enum class IPRuleType(val id: Int) {
@@ -108,6 +121,7 @@ object IpRulesManager : KoinComponent {
         } catch (e: Exception) {
             Logger.e(LOG_TAG_FIREWALL, "err iptree.clear()", e)
         }
+        var anyProxy = false
         db.getIpRules().forEach {
             // adding as part of defensive programming, even adding these rules to cache will
             // not cause any issues, but to avoid unnecessary entries in the trie, skipping these
@@ -130,11 +144,14 @@ object IpRulesManager : KoinComponent {
                     Logger.vv(LOG_TAG_FIREWALL, "iptree.add($k, $v)")
                     iptree.add(k, v)
                     if (it.proxyCC.isNotEmpty()) selectedCCs.add(it.proxyCC)
+                    if (hasProxy(it.proxyId, it.proxyCC)) anyProxy = true
                 } catch (e: Exception) {
                     Logger.e(LOG_TAG_FIREWALL, "err iptree.add($k, $v)", e)
                 }
             }
         }
+        mayHaveProxyRules = anyProxy
+        proxyResultsCache.invalidateAll()
         val count = try {
             iptree.len()
         } catch (e: Exception) {
@@ -271,7 +288,7 @@ object IpRulesManager : KoinComponent {
             }
         }
 
-        resultsCache.invalidateAll()
+        invalidateCaches()
     }
 
     private suspend fun updateRule(ci: CustomIp) {
@@ -286,12 +303,13 @@ object IpRulesManager : KoinComponent {
             try {
                 // escape old entries and add updated rule using ci.port (not android attr)
                 iptree.escLike(k, treeValLike(ci.uid, ci.port))
+                noteProxy(ci.proxyId, ci.proxyCC)
                 iptree.add(k, treeVal(ci.uid, ci.port, ci.status, ci.proxyId, ci.proxyCC))
             } catch (e: Exception) {
                 Logger.e(LOG_TAG_FIREWALL, "err iptree.add($k) for uid: ${ci.uid}", e)
             }
         }
-        resultsCache.invalidateAll()
+        invalidateCaches()
     }
 
     suspend fun updateBypass(c: CustomIp) {
@@ -368,34 +386,83 @@ object IpRulesManager : KoinComponent {
     }
 
 
+    // a rule routes via a proxy when it sets a proxyId (wireguard, socks5, ...) or a proxyCC (rpn
+    // country), or both; status (block / trust / ...) is independent of it
+    private fun hasProxy(proxyId: String, proxyCC: String): Boolean {
+        return proxyId.isNotEmpty() || proxyCC.isNotEmpty()
+    }
+
+    private fun hasProxy(p: Pair<String, String>): Boolean = hasProxy(p.first, p.second)
+
+    private fun noteProxy(proxyId: String, proxyCC: String) {
+        if (hasProxy(proxyId, proxyCC)) mayHaveProxyRules = true
+    }
+
+    private fun invalidateCaches() {
+        resultsCache.invalidateAll()
+        proxyResultsCache.invalidateAll()
+    }
+
+    // returns (proxyId, proxyCC) of the most specific rule for uid that routes ip:port via a
+    // proxy, checked in the same order as hasRule (ip:port, ip, cidr:port, cidr); ("", "") if none
     fun hasProxy(uid: Int, ipstr: String, port: Int): Pair<String, String> {
         getMostSpecificMatchProxies(uid, ipstr, port).let {
             logv("proxy for $uid $ipstr $port => ${it.first}, ${it.second}")
-            if (it.first.isNotEmpty() && it.second.isNotEmpty()) {
-                return it
-            }
+            if (hasProxy(it)) return it
         }
         getMostSpecificMatchProxies(uid, ipstr).let {
             logv("proxy for $uid $ipstr => ${it.first}, ${it.second}")
-            if (it.first.isNotEmpty() && it.second.isNotEmpty()) {
-                return it
-            }
+            if (hasProxy(it)) return it
         }
         getMostSpecificRouteProxies(uid, ipstr, port).let {
             logv("route rule for $uid $ipstr $port => ${it.first}, ${it.second}")
-            if (it.first.isNotEmpty() && it.second.isNotEmpty()) {
-                return it
-            }
+            if (hasProxy(it)) return it
         }
         getMostSpecificRouteProxies(uid, ipstr).let {
             logv("route rule for $uid $ipstr => ${it.first}, ${it.second}")
-            if (it.first.isNotEmpty() && it.second.isNotEmpty()) {
-                return it
-            }
+            if (hasProxy(it)) return it
         }
 
-        Logger.i(LOG_TAG_FIREWALL, "hasProxy? NO $uid, $ipstr, $port")
-        return Pair("","")
+        logv("hasProxy? NO $uid, $ipstr, $port")
+        return NO_PROXY
+    }
+
+    /**
+     * Per-connection proxy look-up for [RuleProxyResolver]: (proxyId, proxyCC) of the most
+     * specific rule of [uid] that covers [ipstr] (the exact ip or any cidr containing it) on
+     * exactly [port], and sets a proxy; ("", "") if none. Pass port 0 for the any-port rules.
+     *
+     * Unlike [hasProxy] this checks a single port level per call, so that the caller can put
+     * every ip:port rule ahead of every any-port rule. Results are cached; the tree is not
+     * consulted at all while no rule carries a proxy.
+     */
+    fun getProxyForIpPort(uid: Int, ipstr: String, port: Int): Pair<String, String> {
+        if (!mayHaveProxyRules || ipstr.isEmpty()) return NO_PROXY
+
+        val ck = CacheKey("$ipstr|$port", uid)
+        proxyResultsCache.getIfPresent(ck)?.let { return it }
+
+        val res = getMostSpecificRouteProxies(uid, ipstr, port)
+        proxyResultsCache.put(ck, res)
+        return res
+    }
+
+    /**
+     * Picks the most specific value for [uid] and [port] that routes via a proxy from [values],
+     * the [Backend.Vsep]-separated "uid:port:status:proxyId:proxyCC" strings returned by the ip
+     * tree, ordered least to most specific. Values of other uids / ports (the tree matches by
+     * prefix, "10:44" is like "10:443"), malformed values and rules without a proxy (status-only
+     * rules do not hide a less specific proxy rule) are skipped.
+     */
+    internal fun pickProxy(values: String?, uid: Int, port: Int): Pair<String, String> {
+        if (values.isNullOrEmpty()) return NO_PROXY
+        values.split(Backend.Vsep).asReversed().forEach {
+            val tv = convertStringToTreeVal(it) ?: return@forEach
+            if (tv.uid == uid && tv.port == port && hasProxy(tv.proxyId, tv.proxyCC)) {
+                return Pair(tv.proxyId, tv.proxyCC)
+            }
+        }
+        return NO_PROXY
     }
 
     private fun hostAddr(ipstr: String, p: Int? = null): Pair<IPAddress, Int> {
@@ -488,22 +555,10 @@ object IpRulesManager : KoinComponent {
                 Logger.e(LOG_TAG_FIREWALL, "err iptree.getLike($k, $vlike) for uid: $uid", e)
                 return Pair("", "")
             }
-            if (DEBUG) logv("getMostSpecificRuleMatch: $uid, $k, $vlike => $x")
-            val treeVals = x?.split(Backend.Vsep) ?: return Pair("","")
-
-            treeVals.reversed().forEach {
-                val treeVal = convertStringToTreeVal(it)
-                if (treeVal == null) {
-                    logv("getMostSpecificMatchProxies: $uid, $k, $vlike => no match for $it")
-                    return Pair("", "")
-                }
-                if (treeVal.uid == uid && treeVal.port == port) {
-                    logv("getMostSpecificMatchProxies: $uid, $k, $vlike => found match for $it")
-                    return Pair(treeVal.proxyId, treeVal.proxyCC)
-                }
-            }
+            if (DEBUG) logv("getMostSpecificMatchProxies: $uid, $k, $vlike => $x")
+            return pickProxy(x, uid, port)
         }
-        return Pair("","")
+        return NO_PROXY
     }
 
     private fun getMostSpecificRouteMatch(uid: Int, ipstr: String, port: Int = 0): IpRuleStatus {
@@ -551,21 +606,10 @@ object IpRulesManager : KoinComponent {
             }
             // ex: uid: 10169, k: 142.250.67.78, vlike: 10169:443 => x: 10169:443:0
             // (10169:443:0) => (uid : port : rule[0->none, 1-> block, 2 -> trust, 3 -> bypass])
-            logv("getMostSpecificRouteMatch: $uid, $k, $vlike => $x")
-            val treeVals = x?.split(Backend.Vsep) ?: return Pair("","")
-            treeVals.reversed().forEach {
-                val treeVal = convertStringToTreeVal(it)
-                if (treeVal == null) {
-                    logv("getMostSpecificRouteProxies: $uid, $k, $vlike => no match for $it")
-                    return Pair("", "")
-                }
-                if (treeVal.uid == uid && treeVal.port == port) {
-                    logv("getMostSpecificRouteProxies: $uid, $k, $vlike => $it")
-                    return Pair(treeVal.proxyId, treeVal.proxyCC)
-                }
-            }
+            if (DEBUG) logv("getMostSpecificRouteProxies: $uid, $k, $vlike => $x")
+            return pickProxy(x, uid, port)
         }
-        return Pair("","")
+        return NO_PROXY
     }
 
     suspend fun deleteRulesByUid(uid: Int) {
@@ -583,7 +627,7 @@ object IpRulesManager : KoinComponent {
             }
         }
         db.deleteRulesByUid(uid)
-        resultsCache.invalidateAll()
+        invalidateCaches()
         Logger.i(LOG_TAG_FIREWALL, "deleted all ip rules for uid: $uid")
     }
 
@@ -602,7 +646,7 @@ object IpRulesManager : KoinComponent {
             }
         }
         db.deleteRules(list)
-        resultsCache.invalidateAll()
+        invalidateCaches()
     }
 
     suspend fun deleteAllAppsRules() {
@@ -612,7 +656,7 @@ object IpRulesManager : KoinComponent {
         } catch (e: Exception) {
             Logger.e(LOG_TAG_FIREWALL, "err iptree.clear()", e)
         }
-        resultsCache.invalidateAll()
+        invalidateCaches()
     }
 
     suspend fun getObj(uid: Int, ipAddress: String, port: Int = 0): CustomIp? {
@@ -759,13 +803,14 @@ object IpRulesManager : KoinComponent {
         if (!k.isNullOrEmpty()) {
             try {
                 iptree.escLike(k, treeValLike(uid, port ?: 0))
+                noteProxy(proxyId, proxyCC)
                 iptree.add(k, treeVal(uid, port ?: 0, status.id, proxyId, proxyCC))
                 Logger.d(LOG_TAG_FIREWALL, "iptree.add($k, ${treeVal(uid, port ?: 0, status.id, proxyId, proxyCC)})")
             } catch (e: Exception) {
                 Logger.e(LOG_TAG_FIREWALL, "err iptree.add($k) for uid: $uid", e)
             }
         }
-        resultsCache.invalidateAll()
+        invalidateCaches()
         return c
     }
 
@@ -778,14 +823,14 @@ object IpRulesManager : KoinComponent {
                 db.updateUid(u, n)
             }
         }
-        resultsCache.invalidateAll()
+        invalidateCaches()
         load()
         Logger.i(LOG_TAG_FIREWALL, "ip rules updated")
     }
 
     suspend fun updateUid(oldUid: Int, newUid: Int) {
         db.updateUid(oldUid, newUid)
-        resultsCache.invalidateAll()
+        invalidateCaches()
         load()
         Logger.i(LOG_TAG_FIREWALL, "ip rules updated for $oldUid to $newUid")
     }
@@ -835,12 +880,13 @@ object IpRulesManager : KoinComponent {
         if (!nk.isNullOrEmpty()) {
             try {
                 iptree.escLike(nk, treeValLike(newRule.uid, port ?: 0))
+                noteProxy(proxyId, proxyCC)
                 iptree.add(nk, treeVal(newRule.uid, port ?: 0, newStatus.id, proxyId, proxyCC))
             } catch (e: Exception) {
                 Logger.e(LOG_TAG_FIREWALL, "err iptree.add($nk) for uid: ${newRule.uid}", e)
             }
         }
-        resultsCache.invalidateAll()
+        invalidateCaches()
     }
 
     // translated from go, net.SplitHostPort()
@@ -963,7 +1009,7 @@ object IpRulesManager : KoinComponent {
             return
         }
         db.tombstoneRulesByUid(oldUid, newUid)
-        resultsCache.invalidateAll()
+        invalidateCaches()
         load()
     }
 

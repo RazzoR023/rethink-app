@@ -685,6 +685,56 @@ object WireguardManager : KoinComponent {
         return proxyIds
     }
 
+    /**
+     * Proxy ids for a flow that a custom ip / domain rule routes via the wireguard config [pid]
+     * (see RuleProxyResolver), using the same eligibility checks as the app configs in
+     * [getAllPossibleConfigIdsForApp]:
+     *  - empty: the rule's config can't be used now (not a wg id, unknown, inactive, or not
+     *    eligible on this network) or one-wg is on; the caller falls through to app routing.
+     *  - [Backend.Block]: [pid] is a lockdown config that is not eligible on this network; the
+     *    flow must be blocked, as for an app-level lockdown config.
+     *  - otherwise [pid], then the eligible active catch-all configs, then [default] unless any
+     *    of those ids is a lockdown config (or [default] is empty, e.g. global lockdown).
+     */
+    fun getConfigIdsForRule(pid: String, usesMobileNw: Boolean, ssid: String, default: String): List<String> {
+        if (!isWgProxyId(pid)) return emptyList()
+        // one-wg routes every app via its config and ignores app configs; rules don't
+        // override it either (another config can't be active alongside it)
+        if (oneWireGuardEnabled()) return emptyList()
+
+        if (!canUseConfig(pid, "rule", usesMobileNw, ssid)) {
+            return if (isLockdownConfig(pid)) {
+                Logger.i(LOG_TAG_PROXY, "lockdown wg $pid for rule not eligible on this nw, return block")
+                listOf(Backend.Block)
+            } else {
+                emptyList()
+            }
+        }
+
+        val proxyIds = mutableListOf(pid)
+        if (isLockdownConfig(pid)) return proxyIds
+
+        mappings.filter { it.isActive && it.isCatchAll }.forEach {
+            val id = ID_WG_BASE + it.id
+            if (isEligibleForNetwork(it.id, usesMobileNw, ssid, it.useOnlyOnMetered, it.ssidEnabled) &&
+                !proxyIds.contains(id)
+            ) {
+                proxyIds.add(id)
+            }
+        }
+
+        if (default.isNotEmpty() && !isAnyProxyLockdown(proxyIds)) proxyIds.add(default)
+        return proxyIds
+    }
+
+    // true if the app is routed via a wireguard lockdown config (usable on this network or
+    // not); app-level lockdown takes precedence over per-rule proxies. one-wg ignores app
+    // configs (see getAllPossibleConfigIdsForApp), so there is no app-level lockdown then.
+    fun isAppInLockdownConfig(uid: Int): Boolean {
+        if (oneWireGuardEnabled()) return false
+        return ProxyManager.getProxyIdsForApp(uid).any { isWgProxyId(it) && isLockdownConfig(it) }
+    }
+
     fun isWgProxyId(pid: String): Boolean {
         if (!pid.startsWith(ID_WG_BASE, ignoreCase = true)) return false
         val suffix = pid.removePrefix(ID_WG_BASE)
