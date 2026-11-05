@@ -137,20 +137,40 @@ object ProxyManager : KoinComponent {
         return pids
     }
 
-    // wireguard configs and the custom socks5 proxy share one app assignment: an app routed via
-    // one of them cannot be assigned to another. rpn, orbot, http and tcp are not part of it.
+    // one proxy per app: an app is routed via at most one wireguard config, the custom socks5
+    // proxy or orbot; assigning one of them replaces the others (see setProxyForApp).
+    // rpn chains with the app's proxy and is not part of the rule, nor are the legacy tcp and
+    // http ids (http is global-only, tcp is not routed per app).
     fun isExclusiveProxyId(pid: String): Boolean {
-        return pid == ID_S5_BASE || WireguardManager.isWgProxyId(pid)
+        return pid == ID_S5_BASE || pid == ID_ORBOT_BASE || WireguardManager.isWgProxyId(pid)
     }
 
-    // returns the exclusive proxy (other than exceptPid) the app is already routed via, if any.
-    // routing is per uid, so a mapping on any package sharing the uid counts
-    fun getExclusiveOwner(uid: Int, exceptPid: String): String? {
-        return pamSet.firstOrNull {
-            it.uid == uid &&
-                it.proxyId != exceptPid &&
-                isExclusiveProxyId(it.proxyId)
-        }?.proxyId
+    // the app's proxy as the ui shows it. Multiple is legacy data (e.g. an app in two wireguard
+    // configs) that keeps routing as before until the app is assigned a proxy again
+    sealed class AppProxy {
+        data object None : AppProxy()
+        data class Single(val proxyId: String) : AppProxy()
+        data class Multiple(val proxyIds: List<String>) : AppProxy()
+    }
+
+    // exclusive proxy ids the app is routed via, sorted. routing is per uid, so a mapping on
+    // any package sharing the uid counts
+    fun getExclusiveProxyIds(uid: Int): List<String> {
+        return pamSet
+            .filter { it.uid == uid && isExclusiveProxyId(it.proxyId) }
+            .map { it.proxyId }
+            .distinct()
+            .sorted()
+    }
+
+    suspend fun getProxyForApp(uid: Int): AppProxy {
+        ensureLoaded()
+        val pids = getExclusiveProxyIds(uid)
+        return when (pids.size) {
+            0 -> AppProxy.None
+            1 -> AppProxy.Single(pids.first())
+            else -> AppProxy.Multiple(pids)
+        }
     }
 
     fun isAppRoutedViaSocks5(uid: Int): Boolean {
@@ -160,6 +180,7 @@ object ProxyManager : KoinComponent {
     // user-facing name for a proxy id: wireguard config name, or the proxy type
     fun proxyDisplayName(pid: String): String {
         if (pid == ID_S5_BASE) return AppConfig.ProxyType.SOCKS5.name
+        if (pid == ID_ORBOT_BASE) return ORBOT_PROXY_NAME
         if (WireguardManager.isWgProxyId(pid)) {
             val id = pid.removePrefix(ID_WG_BASE).toIntOrNull() ?: return pid
             return WireguardManager.getConfigFilesById(id)?.name ?: pid
@@ -207,22 +228,33 @@ object ProxyManager : KoinComponent {
                 // concurrently removed; will be reconciled on next refresh
                 // make sure the app is visible in app-lists even if not assigned to a proxy
                 ensureBaseRow(app.uid, app.packageName, ai.appName)
-                // leave apps routed via another wireguard / socks5 proxy untouched
-                if (isExclusiveProxyId(proxyId) &&
-                    getExclusiveOwner(app.uid, proxyId) != null
-                ) {
-                    return@forEach
-                }
-                val tuple = ProxyAppMapTuple(app.uid, app.packageName, proxyId)
-                if (!pamSet.contains(tuple)) {
-                    pamSet.add(tuple)
-                    val pam =
-                        ProxyApplicationMapping(app.uid, app.packageName, ai.appName, proxyName, true, proxyId)
-                    db.insert(pam)
-                }
+                // bulk add never moves apps: those routed via another proxy are left as is
+                if (!canBulkAdd(app.uid, app.packageName, proxyId)) return@forEach
+                pamSet.add(ProxyAppMapTuple(app.uid, app.packageName, proxyId))
+                val pam =
+                    ProxyApplicationMapping(app.uid, app.packageName, ai.appName, proxyName, true, proxyId)
+                db.insert(pam)
             }
         }
         Logger.i(LOG_TAG_PROXY, "added proxy $proxyId to all apps")
+    }
+
+    // whether the bulk "include all" of proxyId would add this app: it is not on proxyId yet and,
+    // for an exclusive proxy, not routed via another exclusive proxy either
+    private fun canBulkAdd(uid: Int, packageName: String, proxyId: String): Boolean {
+        if (pamSet.contains(ProxyAppMapTuple(uid, packageName, proxyId))) return false
+        if (!isExclusiveProxyId(proxyId)) return true
+        return getExclusiveProxyIds(uid).none { it != proxyId }
+    }
+
+    // number of apps the bulk "include all" of proxyId would still add (see setProxyIdForAllApps);
+    // 0 means every app that can be on proxyId already is
+    suspend fun getBulkAddableAppCount(proxyId: String): Int {
+        ensureLoaded()
+        return FirewallManager.getAllApps().count { app ->
+            val ai = FirewallManager.getAppInfoByUidAndPackage(app.uid, app.packageName)
+            ai != null && ai.tombstoneTs <= 0L && canBulkAdd(app.uid, app.packageName, proxyId)
+        }
     }
 
     suspend fun updateProxyNameForProxyId(proxyId: String, proxyName: String) {
@@ -576,30 +608,74 @@ object ProxyManager : KoinComponent {
             .toSet()
     }
 
-    // returns false if the app was not added: either the proxy id is invalid or the app is
-    // already routed via another wireguard / socks5 proxy (see isExclusiveProxyId)
+    // adds proxyId to the app. an exclusive proxy (wireguard, socks5, orbot) replaces the app's
+    // current one (see setProxyForApp); others (rpn) are added alongside.
+    // returns false if the proxy id is invalid
     suspend fun addProxyToApp(uid: Int, packageName: String, proxyId: String, proxyName: String): Boolean {
         if (!isValidProxyPrefix(proxyId)) {
             Logger.e(LOG_TAG_PROXY, "cannot add invalid proxy id: $proxyId")
             return false
         }
+        if (isExclusiveProxyId(proxyId)) {
+            return setProxyForApp(uid, packageName, proxyId, proxyName)
+        }
         pamMutex.withLock {
             ensureLoadedLocked()
             val tuple = ProxyAppMapTuple(uid, packageName, proxyId)
             if (pamSet.contains(tuple)) return true
-            if (isExclusiveProxyId(proxyId)) {
-                val owner = getExclusiveOwner(uid, proxyId)
-                if (owner != null) {
-                    Logger.w(LOG_TAG_PROXY, "app $packageName($uid) already routed via $owner, skip $proxyId")
-                    return false
-                }
-            }
             pamSet.add(tuple)
-            val appName = FirewallManager.getAppInfoByPackage(packageName)?.appName.orEmpty()
+            val appName = appNameOf(uid, packageName)
             val pam = ProxyApplicationMapping(uid, packageName, appName, proxyName, true, proxyId)
             db.insert(pam)
             return true
         }
+    }
+
+    /**
+     * Sets the one proxy (wireguard config, custom socks5 or orbot) the app is routed via,
+     * replacing whatever exclusive proxy the app had; null, blank or [ID_NONE] clears it.
+     * Routing is per uid, so the app's exclusive mappings on every package of the uid are
+     * replaced; the new mapping is added for (uid, packageName). rpn mappings are untouched.
+     * The db rows are replaced in one transaction under [pamMutex], then the cache follows.
+     * Returns false (and changes nothing) if proxyId is not an exclusive proxy id.
+     */
+    suspend fun setProxyForApp(uid: Int, packageName: String, proxyId: String?, proxyName: String): Boolean {
+        val pid = proxyId?.takeUnless { it.isBlank() || it == ID_NONE }
+        if (pid != null && !isExclusiveProxyId(pid)) {
+            Logger.e(LOG_TAG_PROXY, "setProxyForApp: $pid is not an app proxy, skip $packageName($uid)")
+            return false
+        }
+        pamMutex.withLock {
+            ensureLoadedLocked()
+            val stale = pamSet.filter { it.uid == uid && isExclusiveProxyId(it.proxyId) && it.proxyId != pid }
+            val tuple = pid?.let { ProxyAppMapTuple(uid, packageName, it) }
+            val addTuple = tuple != null && !pamSet.contains(tuple)
+            if (stale.isEmpty() && !addTuple) return true
+
+            val adds = mutableListOf<ProxyApplicationMapping>()
+            if (tuple != null && addTuple) {
+                val appName = appNameOf(uid, packageName)
+                // keep the app visible in the other proxies' app lists once its old row is gone
+                val base = ProxyAppMapTuple(uid, packageName, "")
+                val addBase = !pamSet.contains(base)
+                if (addBase) adds.add(ProxyApplicationMapping(uid, packageName, appName, "", true, ""))
+                adds.add(ProxyApplicationMapping(uid, packageName, appName, proxyName, true, tuple.proxyId))
+            }
+            val removes = stale.map { ProxyApplicationMapping(it.uid, it.packageName, "", "", false, it.proxyId) }
+
+            db.replaceMappings(removes, adds)
+
+            pamSet.removeAll(stale.toSet())
+            adds.forEach { pamSet.add(ProxyAppMapTuple(it.uid, it.packageName, it.proxyId)) }
+            Logger.i(LOG_TAG_PROXY, "setProxyForApp: $packageName($uid) -> ${pid ?: ID_NONE}, removed: ${stale.map { it.proxyId }}")
+            return true
+        }
+    }
+
+    private suspend fun appNameOf(uid: Int, packageName: String): String {
+        val ai = FirewallManager.getAppInfoByUidAndPackage(uid, packageName)
+            ?: FirewallManager.getAppInfoByPackage(packageName)
+        return ai?.appName.orEmpty()
     }
 
     suspend fun removeProxyFromApp(uid: Int, packageName: String, proxyId: String) {

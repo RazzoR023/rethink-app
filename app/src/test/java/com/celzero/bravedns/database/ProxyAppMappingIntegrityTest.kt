@@ -391,6 +391,27 @@ class ProxyAppMappingIntegrityTest {
     }
 
     @Test
+    fun `replaceMappings moves an app to another proxy and keeps base and rpn rows`() {
+        insertProxy(10001, "com.a", "")
+        insertProxy(10001, "com.a", wg0)
+        insertProxy(10001, "com.a", rpn)
+        proxyDao.replaceMappings(
+            remove = listOf(pam(10001, "com.a", wg0)),
+            add = listOf(ProxyApplicationMapping(10001, "com.a", "App10001", "T1", true, wg1))
+        )
+        val rows = proxyDao.getProxiesForApp(10001, "com.a")
+        assertEquals(setOf("", wg1, rpn), rows.map { it.proxyId }.toSet())
+        val moved = rows.first { it.proxyId == wg1 }
+        assertEquals("T1", moved.proxyName)
+        assertTrue(moved.isActive)
+        // the app now shows as selected in wg1 and unselected in wg0
+        assertTrue((10001 to "com.a") in visibleSelected(wg1))
+        assertTrue((10001 to "com.a") in visibleUnselected(wg0))
+        assertEquals(0, proxyDao.getAppCountById(wg0))
+        assertEquals(1, proxyDao.getAppCountById(wg1))
+    }
+
+    @Test
     fun `insert with REPLACE upserts existing row`() {
         proxyDao.insert(pam(10001, "com.a", wg0, appName = "Old"))
         proxyDao.insert(pam(10001, "com.a", wg0, appName = "New"))

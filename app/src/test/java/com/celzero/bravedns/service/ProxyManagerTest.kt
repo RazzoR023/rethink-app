@@ -60,6 +60,9 @@ import java.util.concurrent.CopyOnWriteArraySet
  * ### Key invariants under test
  * - Multi-proxy model: a single app can have multiple [ProxyApplicationMapping] rows, one per
  *   proxyId. The composite PK is (uid, packageName, proxyId).
+ * - One proxy per app: an app (uid) has at most one wireguard / socks5 / orbot mapping;
+ *   [ProxyManager.setProxyForApp] replaces it. rpn mappings chain alongside and are untouched.
+ *   Legacy apps with several such mappings report [ProxyManager.AppProxy.Multiple].
  * - A "base" entry with proxyId="" exists for every tracked app so it appears in "All Apps"
  *   pager queries even when not assigned to any specific proxy.
  * - WireGuard proxyIds use prefix "wg" (e.g. "wg0", "wg1").
@@ -110,7 +113,10 @@ class ProxyManagerTest : KoinTest {
     // ---- Test app data -----------------------------------------------------
     private val uid1  = 10001; private val pkg1  = "com.test.app1"; private val name1 = "App1"
     private val uid2  = 10002; private val pkg2  = "com.test.app2"; private val name2 = "App2"
+    private val uid3  = 10003; private val pkg3  = "com.test.app3"
     private val uid1b = 10201  // work-profile copy (same pkg1, different uid)
+    private val s5    = ProxyManager.ID_S5_BASE
+    private val orbot = ProxyManager.ID_ORBOT_BASE
 
     private lateinit var appInfo1: AppInfo
     private lateinit var appInfo2: AppInfo
@@ -162,6 +168,7 @@ class ProxyManagerTest : KoinTest {
         coJustRun { mockDb.tombstoneApp(any(), any()) }
         coJustRun { mockDb.deleteAll() }
         coJustRun { mockDb.updateProxyNameForProxyId(any(), any()) }
+        coJustRun { mockDb.replaceMappings(any(), any()) }
 
         // FirewallManager is a Kotlin object -- mockkObject is idempotent.
         mockkObject(FirewallManager)
@@ -202,6 +209,13 @@ class ProxyManagerTest : KoinTest {
         connectionStatus = FirewallManager.ConnectionStatus.ALLOW.id,
         isProxyExcluded = false, screenOffAllowed = true, backgroundAllowed = true, tombstoneTs = tombstoneTs
     )
+
+    /** Captures every row added through [ProxyAppMappingRepository.replaceMappings]. */
+    private fun captureReplacedAdds(): MutableList<ProxyApplicationMapping> {
+        val adds = mutableListOf<ProxyApplicationMapping>()
+        coEvery { mockDb.replaceMappings(any(), any()) } answers { adds.addAll(secondArg<List<ProxyApplicationMapping>>()) }
+        return adds
+    }
 
     /** Convenience factory for ProxyApplicationMapping test rows. */
     private fun pam(uid: Int, pkg: String, proxyId: String, proxyName: String = "") =
@@ -336,7 +350,10 @@ class ProxyManagerTest : KoinTest {
         loadMappings(pam(uid1, pkg1, ""))
         ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "Tunnel0")
         assertTrue(ProxyManager.getProxyIdsForApp(uid1).contains(wgProxyId0))
-        coVerify(exactly = 1) { mockDb.insert(match { it.proxyId == wgProxyId0 }) }
+        // exclusive proxies are written through setProxyForApp's single transaction
+        coVerify(exactly = 1) {
+            mockDb.replaceMappings(emptyList(), match { adds -> adds.map { it.proxyId } == listOf(wgProxyId0) })
+        }
     }
 
     @Test
@@ -349,13 +366,14 @@ class ProxyManagerTest : KoinTest {
 
     @Test
     fun `addProxyToApp stores proxyId and proxyName correctly (no swap unlike addNewApp)`() = runBlocking {
-        val capturedPam = slot<ProxyApplicationMapping>()
-        coEvery { mockDb.insert(capture(capturedPam)) } returns 1L
+        val adds = captureReplacedAdds()
         loadMappings(pam(uid1, pkg1, ""))
         ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "Tunnel0")
-        assertTrue(capturedPam.isCaptured)
-        assertEquals(wgProxyId0, capturedPam.captured.proxyId)
-        assertEquals("Tunnel0",  capturedPam.captured.proxyName)
+        assertEquals(1, adds.size)
+        assertEquals(wgProxyId0, adds[0].proxyId)
+        assertEquals("Tunnel0",  adds[0].proxyName)
+        assertEquals(name1, adds[0].appName)
+        assertTrue(adds[0].isActive)
     }
 
     @Test
@@ -396,7 +414,10 @@ class ProxyManagerTest : KoinTest {
         loadMappings(pam(uid1, pkg1, ""))
         ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "T0")
         ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "T0")
-        coVerify(exactly = 1) { mockDb.insert(match { it.proxyId == wgProxyId0 }) }
+        coVerify(exactly = 1) { mockDb.replaceMappings(any(), any()) }
+        ProxyManager.addProxyToApp(uid1, pkg1, rpnProxyId, rpnServerKey)
+        ProxyManager.addProxyToApp(uid1, pkg1, rpnProxyId, rpnServerKey)
+        coVerify(exactly = 1) { mockDb.insert(match { it.proxyId == rpnProxyId }) }
     }
 
     /**
@@ -418,48 +439,213 @@ class ProxyManagerTest : KoinTest {
     // 3. Multi-proxy model
     // ========================================================================
 
+    // one proxy per app: assigning a wireguard config, socks5 or orbot replaces the app's
+    // current one, from any entry point (setProxyForApp / addProxyToApp)
+
     @Test
-    fun `app routed via one WG tunnel cannot be added to another`() = runBlocking {
+    fun `exclusive proxy ids are wireguard configs, socks5 and orbot only`() {
+        assertTrue(ProxyManager.isExclusiveProxyId(wgProxyId0))
+        assertTrue(ProxyManager.isExclusiveProxyId("wg42"))
+        assertTrue(ProxyManager.isExclusiveProxyId(s5))
+        assertTrue(ProxyManager.isExclusiveProxyId(orbot))
+        assertFalse(ProxyManager.isExclusiveProxyId(rpnProxyId))
+        assertFalse(ProxyManager.isExclusiveProxyId(autoProxyId))
+        assertFalse(ProxyManager.isExclusiveProxyId(tcpProxyId))
+        assertFalse(ProxyManager.isExclusiveProxyId(ProxyManager.ID_HTTP_BASE))
+        assertFalse(ProxyManager.isExclusiveProxyId(ProxyManager.ID_NONE))
+        assertFalse(ProxyManager.isExclusiveProxyId(""))
+    }
+
+    @Test
+    fun `setProxyForApp assigns a proxy to an app with none`() = runBlocking {
         loadMappings(pam(uid1, pkg1, ""))
-        assertTrue(ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "T0"))
-        assertFalse(ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId1, "T1"))
+        assertEquals(ProxyManager.AppProxy.None, ProxyManager.getProxyForApp(uid1))
+        assertTrue(ProxyManager.setProxyForApp(uid1, pkg1, wgProxyId0, "T0"))
+        assertEquals(ProxyManager.AppProxy.Single(wgProxyId0), ProxyManager.getProxyForApp(uid1))
+        coVerify(exactly = 1) {
+            mockDb.replaceMappings(
+                emptyList(),
+                match { adds ->
+                    adds.size == 1 && adds[0].uid == uid1 && adds[0].packageName == pkg1 &&
+                        adds[0].proxyId == wgProxyId0 && adds[0].proxyName == "T0" && adds[0].isActive
+                }
+            )
+        }
+        coVerify(exactly = 0) { mockDb.insert(any()) }
+        coVerify(exactly = 0) { mockDb.deleteMapping(any(), any(), any()) }
+    }
+
+    @Test
+    fun `setProxyForApp moves an app from one WG config to another`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0))
+        assertTrue(ProxyManager.setProxyForApp(uid1, pkg1, wgProxyId1, "T1"))
+        assertEquals(setOf(wgProxyId1), ProxyManager.getProxyIdsForApp(uid1))
+        assertEquals(ProxyManager.AppProxy.Single(wgProxyId1), ProxyManager.getProxyForApp(uid1))
+        assertTrue("base row kept", pamSetContains(uid1, pkg1, ""))
+        coVerify(exactly = 1) {
+            mockDb.replaceMappings(
+                match { rm -> rm.map { Triple(it.uid, it.packageName, it.proxyId) } == listOf(Triple(uid1, pkg1, wgProxyId0)) },
+                match { adds -> adds.map { it.proxyId } == listOf(wgProxyId1) }
+            )
+        }
+    }
+
+    @Test
+    fun `addProxyToApp moves an app between WG and socks5 both ways`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0), pam(uid2, pkg2, ""), pam(uid2, pkg2, s5))
+
+        assertTrue(ProxyManager.addProxyToApp(uid1, pkg1, s5, "SOCKS5"))
+        assertTrue(ProxyManager.addProxyToApp(uid2, pkg2, wgProxyId0, "T0"))
+
+        assertEquals(setOf(s5), ProxyManager.getProxyIdsForApp(uid1))
+        assertEquals(setOf(wgProxyId0), ProxyManager.getProxyIdsForApp(uid2))
+        assertTrue(ProxyManager.isAppRoutedViaSocks5(uid1))
+        assertFalse(ProxyManager.isAppRoutedViaSocks5(uid2))
+    }
+
+    @Test
+    fun `setProxyForApp moves an app between socks5 and orbot both ways`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, s5), pam(uid2, pkg2, ""), pam(uid2, pkg2, orbot))
+
+        ProxyManager.setProxyForApp(uid1, pkg1, orbot, ProxyManager.ORBOT_PROXY_NAME)
+        ProxyManager.setProxyForApp(uid2, pkg2, s5, "SOCKS5")
+
+        assertEquals(ProxyManager.AppProxy.Single(orbot), ProxyManager.getProxyForApp(uid1))
+        assertEquals(ProxyManager.AppProxy.Single(s5), ProxyManager.getProxyForApp(uid2))
+        // orbot routing reads getProxyIdForApp
+        assertTrue(ProxyManager.getProxyIdForApp(uid1).contains(orbot))
+        assertFalse(ProxyManager.getProxyIdForApp(uid2).contains(orbot))
+    }
+
+    @Test
+    fun `setProxyForApp with null, blank or SYSTEM clears the app proxy but keeps rpn`() = runBlocking {
+        listOf(null, "", ProxyManager.ID_NONE).forEach { none ->
+            resetProxyManagerState()
+            clearMocks(mockDb, answers = false, recordedCalls = true, childMocks = false)
+            loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0), pam(uid1, pkg1, rpnProxyId))
+
+            assertTrue(ProxyManager.setProxyForApp(uid1, pkg1, none, ""))
+
+            assertEquals(ProxyManager.AppProxy.None, ProxyManager.getProxyForApp(uid1))
+            assertEquals("rpn untouched ($none)", setOf(rpnProxyId), ProxyManager.getProxyIdsForApp(uid1))
+            assertTrue(pamSetContains(uid1, pkg1, ""))
+            coVerify(exactly = 1) {
+                mockDb.replaceMappings(
+                    match { rm -> rm.map { it.proxyId } == listOf(wgProxyId0) },
+                    emptyList()
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `clearing an app with no proxy writes nothing`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, rpnProxyId))
+        assertTrue(ProxyManager.setProxyForApp(uid1, pkg1, null, ""))
+        coVerify(exactly = 0) { mockDb.replaceMappings(any(), any()) }
+        assertEquals(setOf(rpnProxyId), ProxyManager.getProxyIdsForApp(uid1))
+    }
+
+    @Test
+    fun `setProxyForApp is a no-op when the app is already on that proxy`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0))
+        assertTrue(ProxyManager.setProxyForApp(uid1, pkg1, wgProxyId0, "T0"))
+        coVerify(exactly = 0) { mockDb.replaceMappings(any(), any()) }
+    }
+
+    @Test
+    fun `setProxyForApp rejects rpn and other non-exclusive ids and changes nothing`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0))
+        assertFalse(ProxyManager.setProxyForApp(uid1, pkg1, rpnProxyId, rpnServerKey))
+        assertFalse(ProxyManager.setProxyForApp(uid1, pkg1, tcpProxyId, "tcp"))
+        assertFalse(ProxyManager.setProxyForApp(uid1, pkg1, "UNKNOWN", "bad"))
+        assertEquals(setOf(wgProxyId0), ProxyManager.getProxyIdsForApp(uid1))
+        coVerify(exactly = 0) { mockDb.replaceMappings(any(), any()) }
+    }
+
+    @Test
+    fun `legacy app on several proxies is reported as Multiple and collapsed on next set`() = runBlocking {
+        loadMappings(
+            pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId1), pam(uid1, pkg1, wgProxyId0),
+            pam(uid1, pkg1, rpnProxyId)
+        )
+        // routing keeps seeing both until the app is changed
+        assertEquals(setOf(wgProxyId0, wgProxyId1, rpnProxyId), ProxyManager.getProxyIdsForApp(uid1))
+        assertEquals(
+            ProxyManager.AppProxy.Multiple(listOf(wgProxyId0, wgProxyId1)),
+            ProxyManager.getProxyForApp(uid1)
+        )
+
+        ProxyManager.setProxyForApp(uid1, pkg1, s5, "SOCKS5")
+
+        assertEquals(ProxyManager.AppProxy.Single(s5), ProxyManager.getProxyForApp(uid1))
+        assertEquals(setOf(s5, rpnProxyId), ProxyManager.getProxyIdsForApp(uid1))
+        coVerify(exactly = 1) {
+            mockDb.replaceMappings(
+                match { rm -> rm.map { it.proxyId }.toSet() == setOf(wgProxyId0, wgProxyId1) },
+                match { adds -> adds.map { it.proxyId } == listOf(s5) }
+            )
+        }
+    }
+
+    @Test
+    fun `legacy multiple collapses to one of its own proxies without re-adding it`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0), pam(uid1, pkg1, wgProxyId1))
+        ProxyManager.setProxyForApp(uid1, pkg1, wgProxyId0, "T0")
+        assertEquals(ProxyManager.AppProxy.Single(wgProxyId0), ProxyManager.getProxyForApp(uid1))
+        coVerify(exactly = 1) {
+            mockDb.replaceMappings(match { rm -> rm.map { it.proxyId } == listOf(wgProxyId1) }, emptyList())
+        }
+    }
+
+    @Test
+    fun `packages sharing a uid share one proxy`() = runBlocking {
+        val sharedPkg = "com.example.shared"
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, sharedPkg, ""), pam(uid1, pkg1, wgProxyId0))
+
+        // routing is per uid: moving the other package of the uid moves the uid
+        ProxyManager.setProxyForApp(uid1, sharedPkg, s5, "SOCKS5")
+
+        assertEquals(ProxyManager.AppProxy.Single(s5), ProxyManager.getProxyForApp(uid1))
+        assertFalse(pamSetContains(uid1, pkg1, wgProxyId0))
+        assertTrue(pamSetContains(uid1, sharedPkg, s5))
+        assertTrue(ProxyManager.isAppRoutedViaSocks5(uid1))
+    }
+
+    @Test
+    fun `setProxyForApp backfills a missing base row with the move`() = runBlocking {
+        val adds = captureReplacedAdds()
+        loadMappings(pam(uid1, pkg1, wgProxyId0))
+        ProxyManager.setProxyForApp(uid1, pkg1, wgProxyId1, "T1")
+        assertEquals(listOf("", wgProxyId1), adds.map { it.proxyId })
+        assertTrue(pamSetContains(uid1, pkg1, ""))
+        assertTrue(pamSetContains(uid1, pkg1, wgProxyId1))
+        assertFalse(pamSetContains(uid1, pkg1, wgProxyId0))
+    }
+
+    @Test
+    fun `db failure leaves the cache unchanged`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0))
+        coEvery { mockDb.replaceMappings(any(), any()) } throws IllegalStateException("db")
+        val r = runCatching { ProxyManager.setProxyForApp(uid1, pkg1, s5, "SOCKS5") }
+        assertTrue(r.isFailure)
         assertEquals(setOf(wgProxyId0), ProxyManager.getProxyIdsForApp(uid1))
     }
 
     @Test
-    fun `WG and custom socks5 share one exclusive app assignment`() = runBlocking {
-        val s5 = ProxyManager.ID_S5_BASE
-        loadMappings(pam(uid1, pkg1, ""), pam(uid2, pkg2, ""))
-        assertTrue(ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "T0"))
-        assertTrue(ProxyManager.addProxyToApp(uid2, pkg2, s5, "SOCKS5"))
-
-        assertFalse(ProxyManager.addProxyToApp(uid1, pkg1, s5, "SOCKS5"))
-        assertFalse(ProxyManager.addProxyToApp(uid2, pkg2, wgProxyId0, "T0"))
-        assertEquals(wgProxyId0, ProxyManager.getExclusiveOwner(uid1, s5))
-        assertEquals(s5, ProxyManager.getExclusiveOwner(uid2, wgProxyId1))
-        assertTrue(ProxyManager.isAppRoutedViaSocks5(uid2))
-        assertFalse(ProxyManager.isAppRoutedViaSocks5(uid1))
-    }
-
-    @Test
-    fun `packages sharing a uid share one exclusive owner`() = runBlocking {
-        val s5 = ProxyManager.ID_S5_BASE
-        val sharedPkg = "com.example.shared"
-        loadMappings(pam(uid1, pkg1, ""), pam(uid1, sharedPkg, ""))
-        assertTrue(ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "T0"))
-
-        // the other package of the uid would be routed via wg0 anyway
-        assertFalse(ProxyManager.addProxyToApp(uid1, sharedPkg, s5, "SOCKS5"))
-        assertEquals(wgProxyId0, ProxyManager.getExclusiveOwner(uid1, s5))
-        assertFalse(ProxyManager.isAppRoutedViaSocks5(uid1))
-    }
-
-    @Test
-    fun `exclusive owner is released when the app is removed from it`() = runBlocking {
-        loadMappings(pam(uid1, pkg1, ""))
-        ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "T0")
-        ProxyManager.removeProxyFromApp(uid1, pkg1, wgProxyId0)
-        assertTrue(ProxyManager.addProxyToApp(uid1, pkg1, ProxyManager.ID_S5_BASE, "SOCKS5"))
+    fun `app counts follow a move between proxies`() = runBlocking {
+        loadMappings(
+            pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0),
+            pam(uid2, pkg2, ""), pam(uid2, pkg2, wgProxyId0)
+        )
+        assertEquals(2, ProxyManager.getAppCountForProxy(wgProxyId0))
+        ProxyManager.setProxyForApp(uid1, pkg1, wgProxyId1, "T1")
+        assertEquals(1, ProxyManager.getAppCountForProxy(wgProxyId0))
+        assertEquals(1, ProxyManager.getAppCountForProxy(wgProxyId1))
+        ProxyManager.setProxyForApp(uid2, pkg2, s5, "SOCKS5")
+        assertEquals(0, ProxyManager.getAppCountForProxy(wgProxyId0))
+        assertFalse(ProxyManager.isAnyAppSelected(wgProxyId0))
+        assertEquals(1, ProxyManager.getAppCountForProxy(s5))
     }
 
     @Test
@@ -467,22 +653,119 @@ class ProxyManagerTest : KoinTest {
         loadMappings(pam(uid1, pkg1, ""))
         ProxyManager.addProxyToApp(uid1, pkg1, wgProxyId0, "T0")
         assertTrue(ProxyManager.addProxyToApp(uid1, pkg1, rpnProxyId, rpnServerKey))
-        assertTrue(ProxyManager.getProxyIdsForApp(uid1).containsAll(listOf(wgProxyId0, rpnProxyId)))
+        assertTrue(ProxyManager.addProxyToApp(uid1, pkg1, rpnProxyId2, rpnServerKey2))
+        assertEquals(setOf(wgProxyId0, rpnProxyId, rpnProxyId2), ProxyManager.getProxyIdsForApp(uid1))
+        // rpn ids never count as the app's proxy
+        assertEquals(ProxyManager.AppProxy.Single(wgProxyId0), ProxyManager.getProxyForApp(uid1))
+        // and moving the app leaves them alone
+        ProxyManager.addProxyToApp(uid1, pkg1, orbot, ProxyManager.ORBOT_PROXY_NAME)
+        assertEquals(setOf(orbot, rpnProxyId, rpnProxyId2), ProxyManager.getProxyIdsForApp(uid1))
+        coVerify(exactly = 0) { mockDb.deleteMapping(any(), any(), rpnProxyId) }
+        coVerify(exactly = 0) {
+            mockDb.replaceMappings(match { rm -> rm.any { it.proxyId.startsWith(Backend.RpnWin) } }, any())
+        }
     }
 
     @Test
+    fun `app on rpn only has no app proxy`() = runBlocking {
+        loadMappings(pam(uid1, pkg1, ""), pam(uid1, pkg1, rpnProxyId))
+        assertEquals(ProxyManager.AppProxy.None, ProxyManager.getProxyForApp(uid1))
+    }
+
+    @Test
+    fun `proxyDisplayName names socks5 and orbot`() {
+        assertEquals("SOCKS5", ProxyManager.proxyDisplayName(s5))
+        assertEquals(ProxyManager.ORBOT_PROXY_NAME, ProxyManager.proxyDisplayName(orbot))
+        assertEquals(rpnProxyId, ProxyManager.proxyDisplayName(rpnProxyId))
+    }
+
+    // --- bulk select / deselect in a proxy's app picker ---------------------------------
+
+    @Test
     fun `setProxyIdForAllApps skips apps owned by another exclusive proxy`() = runBlocking {
-        val s5 = ProxyManager.ID_S5_BASE
-        loadMappings(pam(uid1, pkg1, ""), pam(uid2, pkg2, ""), pam(uid1, pkg1, wgProxyId0))
-        coEvery { FirewallManager.getAllApps() } returns
-            setOf(FirewallManager.AppInfoTuple(uid1, pkg1), FirewallManager.AppInfoTuple(uid2, pkg2))
-        coEvery { FirewallManager.getAppInfoByUidAndPackage(uid1, pkg1) } returns appInfo1
-        coEvery { FirewallManager.getAppInfoByUidAndPackage(uid2, pkg2) } returns appInfo2
+        loadMappings(
+            pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0),
+            pam(uid2, pkg2, ""),
+            pam(uid3, pkg3, ""), pam(uid3, pkg3, orbot),
+        )
+        stubFwApps(
+            FirewallManager.AppInfoTuple(uid1, pkg1),
+            FirewallManager.AppInfoTuple(uid2, pkg2),
+            FirewallManager.AppInfoTuple(uid3, pkg3)
+        )
 
         ProxyManager.setProxyIdForAllApps(s5, "SOCKS5")
 
-        assertFalse(ProxyManager.getProxyIdsForApp(uid1).contains(s5))
-        assertTrue(ProxyManager.getProxyIdsForApp(uid2).contains(s5))
+        assertEquals(setOf(wgProxyId0), ProxyManager.getProxyIdsForApp(uid1))
+        assertEquals(setOf(s5), ProxyManager.getProxyIdsForApp(uid2))
+        assertEquals(setOf(orbot), ProxyManager.getProxyIdsForApp(uid3))
+        // nothing is stolen
+        coVerify(exactly = 0) { mockDb.deleteMapping(any(), any(), any()) }
+        coVerify(exactly = 0) { mockDb.replaceMappings(any(), any()) }
+    }
+
+    @Test
+    fun `bulk add to a WG config skips other WG configs but includes rpn-only apps`() = runBlocking {
+        loadMappings(
+            pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId1),
+            pam(uid2, pkg2, ""), pam(uid2, pkg2, rpnProxyId),
+            pam(uid3, pkg3, ""),
+        )
+        stubFwApps(
+            FirewallManager.AppInfoTuple(uid1, pkg1),
+            FirewallManager.AppInfoTuple(uid2, pkg2),
+            FirewallManager.AppInfoTuple(uid3, pkg3)
+        )
+        assertEquals(2, ProxyManager.getBulkAddableAppCount(wgProxyId0))
+
+        ProxyManager.setProxyIdForAllApps(wgProxyId0, "T0")
+
+        assertEquals(setOf(wgProxyId1), ProxyManager.getProxyIdsForApp(uid1))
+        assertEquals(setOf(wgProxyId0, rpnProxyId), ProxyManager.getProxyIdsForApp(uid2))
+        assertEquals(setOf(wgProxyId0), ProxyManager.getProxyIdsForApp(uid3))
+        assertEquals(2, ProxyManager.getAppCountForProxy(wgProxyId0))
+        assertEquals(0, ProxyManager.getBulkAddableAppCount(wgProxyId0))
+        // every app is on some proxy now, so wg1 has nothing left to bulk-add either
+        assertEquals(0, ProxyManager.getBulkAddableAppCount(wgProxyId1))
+    }
+
+    @Test
+    fun `bulk remove only removes this proxy's apps`() = runBlocking {
+        loadMappings(
+            pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0), pam(uid1, pkg1, rpnProxyId),
+            pam(uid2, pkg2, ""), pam(uid2, pkg2, wgProxyId1),
+            pam(uid3, pkg3, ""), pam(uid3, pkg3, s5),
+        )
+
+        ProxyManager.setNoProxyForAllAppsForProxy(wgProxyId0)
+
+        assertEquals(setOf(rpnProxyId), ProxyManager.getProxyIdsForApp(uid1))
+        assertEquals(setOf(wgProxyId1), ProxyManager.getProxyIdsForApp(uid2))
+        assertEquals(setOf(s5), ProxyManager.getProxyIdsForApp(uid3))
+        coVerify(exactly = 1) { mockDb.deleteMapping(uid1, pkg1, wgProxyId0) }
+        coVerify(exactly = 1) { mockDb.deleteMapping(any(), any(), any()) }
+    }
+
+    @Test
+    fun `bulk addable count ignores tombstoned apps and is unchanged for rpn`() = runBlocking {
+        loadMappings(
+            pam(uid1, pkg1, ""), pam(uid1, pkg1, wgProxyId0),
+            pam(uid2, pkg2, ""),
+        )
+        stubFwApps(
+            FirewallManager.AppInfoTuple(uid1, pkg1),
+            FirewallManager.AppInfoTuple(uid2, pkg2),
+            FirewallManager.AppInfoTuple(uid3, pkg3)
+        )
+        coEvery { FirewallManager.getAppInfoByUidAndPackage(uid3, pkg3) } returns
+            buildAppInfo(uid3, pkg3, "gone", tombstoneTs = 999L)
+
+        assertEquals(1, ProxyManager.getBulkAddableAppCount(s5))
+        // rpn chains with app proxies, so every live app can still be added to it
+        assertEquals(2, ProxyManager.getBulkAddableAppCount(rpnProxyId))
+        ProxyManager.setProxyIdForAllApps(rpnProxyId, rpnServerKey)
+        assertEquals(setOf(wgProxyId0, rpnProxyId), ProxyManager.getProxyIdsForApp(uid1))
+        assertEquals(0, ProxyManager.getBulkAddableAppCount(rpnProxyId))
     }
 
     @Test

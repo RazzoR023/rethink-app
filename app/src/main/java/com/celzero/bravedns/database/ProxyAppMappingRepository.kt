@@ -96,4 +96,9 @@ class ProxyAppMappingRepository(
     suspend fun deleteMapping(uid: Int, packageName: String, proxyId: String) {
         proxyApplicationMappingDAO.deleteMapping(uid, packageName, proxyId)
     }
+
+    // deletes the rows in remove (by uid, packageName, proxyId) and inserts add, atomically
+    suspend fun replaceMappings(remove: List<ProxyApplicationMapping>, add: List<ProxyApplicationMapping>) {
+        proxyApplicationMappingDAO.replaceMappings(remove, add)
+    }
 }

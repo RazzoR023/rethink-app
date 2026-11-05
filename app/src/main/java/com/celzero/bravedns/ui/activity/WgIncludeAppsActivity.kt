@@ -122,7 +122,16 @@ class WgIncludeAppsActivity : BaseActivity(),
 
     private fun initializeValues() {
         appsAdapter =
-            WgIncludeAppsAdapter(this, proxyId, proxyName, onAppModified = { onAppModified() })
+            WgIncludeAppsAdapter(
+                this,
+                proxyId,
+                proxyName,
+                onAppModified = {
+                    onAppModified()
+                    // a single toggle can fill or empty the proxy
+                    syncBulkToggleState()
+                }
+            )
         viewModel.apps.observe(this) { appsAdapter.submitData(lifecycle, it) }
 
         b.wgIncludeAppRecyclerViewDialog.adapter = appsAdapter
@@ -224,20 +233,21 @@ class WgIncludeAppsActivity : BaseActivity(),
 
     /**
      * Reflects the persisted bulk state on the checkboxes:
-     * all apps included → "select all" checked; no apps included → "deselect all" checked.
-     * Purely visual, never triggers actions.
+     * every app "select all" can add is included → "select all" checked (apps on another
+     * proxy are never added by it, so they don't count); no apps included → "deselect all"
+     * checked. Purely visual, never triggers actions.
      */
     private fun syncBulkToggleState() {
         io {
             ProxyManager.ensureLoaded()
             val selected = ProxyManager.getAppCountForProxy(proxyId)
-            val total = ProxyManager.trackedApps().size
+            val addable = ProxyManager.getBulkAddableAppCount(proxyId)
             withContext(Dispatchers.Main) {
                 if (isFinishing || isDestroyed) return@withContext
-                if (total > 0 && selected >= total) {
+                if (selected > 0 && addable == 0) {
                     b.wgIncludeAppBulkCheck.isChecked = true
                     b.wgIncludeAppDeselectAllCheck.isChecked = false
-                } else if (total > 0 && selected == 0) {
+                } else if (selected == 0) {
                     b.wgIncludeAppBulkCheck.isChecked = false
                     b.wgIncludeAppDeselectAllCheck.isChecked = true
                 } else {

@@ -96,7 +96,6 @@
     <string name="lbl_http_socks5" translatable="true">HTTPS &amp; SOCKS5</string>
     <string name="lbl_wireguard_socks5" translatable="true">WireGuard &amp; SOCKS5</string>
     <string name="proxy_app_routed_via" translatable="true">Routed via %1$s</string>
-    <string name="proxy_app_owned_by_other_toast" translatable="true">%1$s is already routed via %2$s. Remove it there first.</string>
     <string name="settings_socks5_apps_btn" translatable="true">Apps (%1$s)</string>
     <string name="settings_socks5_status" translatable="true">%1$s:%2$s · %3$s</string>
     <string name="settings_socks5_no_apps_hint" translatable="true">No apps selected. SOCKS5 routes only the apps you pick.</string>
@@ -111,7 +110,7 @@
     <string name="socks5_auth_none" translatable="true">No authentication</string>
     <string name="socks5_auth_user" translatable="true">Username: %1$s</string>
     <string name="socks5_options_title" translatable="true">Options</string>
-    <string name="socks5_apps_desc" translatable="true">Only the apps you pick use SOCKS5. Apps already routed via a WireGuard config are greyed out.</string>
+    <string name="socks5_apps_desc" translatable="true">Only the apps you pick use SOCKS5. Picking an app routed via WireGuard or Orbot moves it here.</string>
     <string name="socks5_forwarder_title" translatable="true">Forwarder app</string>
     <string name="socks5_forwarder_desc" translatable="true">The app that runs the SOCKS5 server on this device. Its own traffic is never sent back into SOCKS5.</string>
     <string name="socks5_forwarder_value" translatable="true">Forwarder app: %1$s</string>

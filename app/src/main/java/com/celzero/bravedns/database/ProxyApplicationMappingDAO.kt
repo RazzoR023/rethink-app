@@ -110,4 +110,11 @@ interface ProxyApplicationMappingDAO {
 
     @Query("delete from ProxyApplicationMapping where uid = :uid and packageName = :packageName and proxyId = :proxyId")
     fun deleteMapping(uid: Int, packageName: String, proxyId: String)
+
+    // removes and adds rows in one transaction (used to move an app to another proxy)
+    @Transaction
+    fun replaceMappings(remove: List<ProxyApplicationMapping>, add: List<ProxyApplicationMapping>) {
+        remove.forEach { deleteMapping(it.uid, it.packageName, it.proxyId) }
+        add.forEach { insert(it) }
+    }
 }
