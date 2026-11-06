@@ -93,21 +93,6 @@ import com.celzero.bravedns.R
     WgProgress(b.wgHopListProgress, Modifier.fillMaxWidth().padding(horizontal = 10.dp))
 }
 
-@Composable fun WgPeerRow(b: WgPeerRowState) {
-    WgCard(contentPadding = PaddingValues(start = 15.dp, top = 15.dp, end = 15.dp, bottom = 20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            WgText(b.peerTitle, Modifier.weight(1f))
-            WgIcon(b.peerEdit, stringResource(R.string.rt_edit_dialog_positive))
-            WgIcon(b.peerDelete, stringResource(R.string.lbl_delete))
-        }
-        WgText(b.publicKeyLabel); WgText(b.publicKeyText)
-        WgText(b.preSharedKeyLabel); WgText(b.preSharedKeyText)
-        WgText(b.allowedIpsLabel); WgText(b.allowedIpsText)
-        WgText(b.endpointLabel); WgText(b.endpointText)
-        WgText(b.persistentKeepaliveLabel); WgText(b.persistentKeepaliveText)
-    }
-}
-
 @Composable fun WgStatsRow(b: WgStatsRowState) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

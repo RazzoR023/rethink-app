@@ -376,6 +376,10 @@ object VpnController : KoinComponent {
         rvpn?.onCustomSocks5ForwarderChanged()
     }
 
+    fun onCustomHttpProxyChanged() {
+        rvpn?.onCustomHttpProxyChanged()
+    }
+
     suspend fun readdHttpProxy() {
         rvpn?.readdHttpProxy()
     }

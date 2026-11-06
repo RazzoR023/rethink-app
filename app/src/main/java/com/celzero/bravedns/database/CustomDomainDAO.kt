@@ -26,6 +26,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import com.celzero.bravedns.util.Constants
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CustomDomainDAO {
@@ -103,4 +104,8 @@ interface CustomDomainDAO {
 
     @Query("SELECT COUNT(*) FROM CustomDomain WHERE proxyCC = :cc")
     fun getRulesCountByCC(cc: String): Int
+
+    // rules (any uid) routing via a proxy, for the proxy's own page; re-emits on every write
+    @Query("SELECT * FROM CustomDomain WHERE proxyId = :proxyId ORDER BY modifiedTs DESC")
+    fun getRulesByProxyIdFlow(proxyId: String): Flow<List<CustomDomain>>
 }

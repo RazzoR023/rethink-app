@@ -1295,6 +1295,14 @@ internal constructor(
         addProxy(ProxyType.HTTP, ProxyProvider.CUSTOM)
     }
 
+    // saves the custom http endpoint without changing the on/off state; a running http proxy
+    // is re-applied the same way turning it on does (the forwarder app may change too)
+    suspend fun saveCustomHttpEndpoint(proxyEndpoint: ProxyEndpoint) {
+        proxyEndpointRepository.update(proxyEndpoint)
+        customHttpEndpoint = proxyEndpoint
+        if (isCustomHttpProxyEnabled()) VpnController.onCustomHttpProxyChanged()
+    }
+
     suspend fun updateOrbotHttpProxy(proxyEndpoint: ProxyEndpoint) {
         proxyEndpointRepository.update(proxyEndpoint)
     }

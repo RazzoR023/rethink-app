@@ -56,7 +56,6 @@ import com.celzero.bravedns.service.VpnController
 import com.celzero.bravedns.service.WireguardManager
 import com.celzero.bravedns.service.WireguardManager.WG_UPTIME_THRESHOLD
 import com.celzero.bravedns.ui.BaseActivity
-import com.celzero.bravedns.ui.bottomsheet.OrbotBottomSheet
 import com.celzero.bravedns.ui.fragment.RethinkPlusFragment
 import com.celzero.bravedns.ui.fragment.ServerSelectionFragment
 import com.celzero.bravedns.util.Constants
@@ -153,6 +152,8 @@ class ProxySettingsActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         refreshOrbotUi()
+        // the HTTP page may have changed the url / state
+        displayHttpProxyUi()
         handleProxyUi()
         displayWireguardUi()
         displayRpnUi()
@@ -181,8 +182,6 @@ class ProxySettingsActivity : BaseActivity() {
     }
 
     private fun initView() {
-        b.settingsActivityHttpProxyProgress.visibility = View.GONE
-
         if (Utilities.isFdroidFlavour()) {
             b.rpnHeader.visibility = View.GONE
             b.settingsActivityRpnContainer.visibility = View.GONE
@@ -210,79 +209,13 @@ class ProxySettingsActivity : BaseActivity() {
 
         b.settingsActivityWireguardImg.setOnClickListener { openWireguardActivity() }
 
-        b.settingsActivityHttpProxyContainer.setOnClickListener {
-            b.settingsActivityHttpProxySwitch.isChecked =
-                !b.settingsActivityHttpProxySwitch.isChecked
-        }
+        b.settingsActivityHttpProxyContainer.setOnClickListener { openHttpScreen() }
 
-        b.settingsActivityHttpProxySwitch.setOnCheckedChangeListener {
-            _: CompoundButton,
-            checked: Boolean ->
-            if (!checked) {
-                appConfig.removeProxy(AppConfig.ProxyType.HTTP, AppConfig.ProxyProvider.CUSTOM)
-                b.settingsActivityHttpProxyDesc.text = getString(R.string.settings_https_desc)
-                return@setOnCheckedChangeListener
-            }
+        b.settingsActivityHttpProxyImg.setOnClickListener { openHttpScreen() }
+    }
 
-            if (appConfig.getBraveMode().isDnsMode()) {
-                b.settingsActivityHttpProxySwitch.isChecked = false
-                return@setOnCheckedChangeListener
-            }
-
-            if (!appConfig.canEnableHttpProxy()) {
-                val s = persistentState.proxyProvider.lowercase().replaceFirstChar(Char::titlecase)
-                showToastUiCentered(
-                    this,
-                    getString(R.string.settings_https_disabled_error, s),
-                    Toast.LENGTH_SHORT,
-                )
-                b.settingsActivityHttpProxySwitch.isChecked = false
-                return@setOnCheckedChangeListener
-            }
-            io {
-                // initiate the refresh database, so that newly added apps can be listed
-                rdb.refresh(RefreshDatabase.ACTION_REFRESH_FORCE)
-                val endpoint =
-                    try {
-                        appConfig.getHttpProxyDetails()
-                    } catch (e: Exception) {
-                        Logger.e(LOG_TAG_PROXY, "err fetching HTTP proxy details: ${e.message}", e)
-                        null
-                    }
-                if (endpoint == null) {
-                    uiCtx {
-                        showToastUiCentered(
-                            this,
-                            getString(R.string.blocklist_update_check_failure),
-                            Toast.LENGTH_SHORT,
-                        )
-                    }
-                    return@io
-                }
-                val packageName = endpoint.proxyAppName
-                val app = FirewallManager.getAppInfoByPackage(packageName)
-                val m = ProxyManager.ProxyMode.get(endpoint.proxyMode)
-                if (m?.isCustomHttp() == true) {
-                    val appNames: MutableList<String> = ArrayList()
-                    appNames.add(getString(R.string.settings_app_list_default_app))
-                    appNames.addAll(
-                        FirewallManager.getAllAppNamesSortedByVpnPermission(
-                            this@ProxySettingsActivity
-                        )
-                    )
-                    uiCtx { showHttpProxyDialog(endpoint, appNames, app?.appName) }
-                } else {
-                    val appNames: MutableList<String> = ArrayList()
-                    appNames.add(getString(R.string.settings_app_list_default_app))
-                    appNames.addAll(
-                        FirewallManager.getAllAppNamesSortedByVpnPermission(
-                            this@ProxySettingsActivity
-                        )
-                    )
-                    uiCtx { showHttpProxyDialog(endpoint, appNames, app?.appName) }
-                }
-            }
-        }
+    private fun openHttpScreen() {
+        startActivity(HttpProxyActivity.newIntent(this))
     }
 
     private fun refresh(iv: WgControlState) {
@@ -303,52 +236,6 @@ class ProxySettingsActivity : BaseActivity() {
         }
     }
 
-    /** Prompt user to download the Orbot app based on the current BUILDCONFIG flavor. */
-    private fun showOrbotInstallDialog() {
-        val builder = MaterialAlertDialogBuilder(this, R.style.App_Dialog_NoDim)
-        builder.setTitle(R.string.orbot_install_dialog_title)
-        builder.setMessage(R.string.orbot_install_dialog_message)
-        builder.setPositiveButton(getString(R.string.orbot_install_dialog_positive)) { _, _ ->
-            handleOrbotInstall()
-        }
-        builder.setNegativeButton(getString(R.string.lbl_dismiss)) { dialog, _ -> dialog.dismiss() }
-        builder.setNeutralButton(getString(R.string.orbot_install_dialog_neutral)) { _, _ ->
-            launchOrbotWebsite()
-        }
-        val dialog = builder.create()
-        dialog.show()
-        UIUtils.capDialogWidth(dialog)
-    }
-
-    private fun launchOrbotWebsite() {
-        openUrl(this, getString(R.string.orbot_website_link))
-    }
-
-    private fun handleOrbotInstall() {
-        startOrbotInstallActivity(orbotHelper.getIntentForDownload())
-    }
-
-    private fun startOrbotInstallActivity(intent: Intent?) {
-        if (intent == null) {
-            showToastUiCentered(
-                this,
-                getString(R.string.orbot_install_activity_error),
-                Toast.LENGTH_SHORT,
-            )
-            return
-        }
-
-        try {
-            startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            showToastUiCentered(
-                this,
-                getString(R.string.orbot_install_activity_error),
-                Toast.LENGTH_SHORT,
-            )
-        }
-    }
-
     private fun handleOrbotUiEvent() {
         // Proxy lockdown: Orbot cannot be used. Inform instead of silently ignoring.
         if (persistentState.wgGlobalLockdown) {
@@ -359,36 +246,8 @@ class ProxySettingsActivity : BaseActivity() {
             )
             return
         }
-        io {
-            val isOrbotInstalled = FirewallManager.isOrbotInstalled()
-            uiCtx {
-                if (!isOrbotInstalled) {
-                    showOrbotInstallDialog()
-                    return@uiCtx
-                }
-
-                if (!appConfig.canEnableOrbotProxy()) {
-                    val s =
-                        persistentState.proxyProvider.lowercase().replaceFirstChar(Char::titlecase)
-                    if (s.equals(AppConfig.ProxyProvider.CUSTOM.name, ignoreCase = true)) {
-                        showToastUiCentered(
-                            this,
-                            getString(R.string.settings_orbot_disabled_error),
-                            Toast.LENGTH_SHORT,
-                        )
-                    } else {
-                        showToastUiCentered(
-                            this,
-                            getString(R.string.settings_socks5_disabled_error, s),
-                            Toast.LENGTH_SHORT,
-                        )
-                    }
-                    return@uiCtx
-                }
-
-                openOrbotBottomSheet()
-            }
-        }
+        // install / mode / apps / checks live on the Orbot page
+        startActivity(OrbotProxyActivity.newIntent(this))
     }
 
     private fun openWireguardActivity() {
@@ -396,60 +255,27 @@ class ProxySettingsActivity : BaseActivity() {
         startActivity(intent)
     }
 
-    private fun openOrbotBottomSheet() {
-        if (!VpnController.hasTunnel()) {
-            showToastUiCentered(
-                this,
-                getString(R.string.settings_socks5_vpn_disabled_error),
-                Toast.LENGTH_SHORT,
-            )
+    private fun displayHttpProxyUi() {
+        b.settingsActivityHttpProxyContainer.visibility = View.VISIBLE
+        if (!appConfig.isCustomHttpProxyEnabled()) {
+            b.settingsActivityHttpProxyDesc.text = getString(R.string.settings_https_desc)
             return
         }
-
-        val bottomSheetFragment = OrbotBottomSheet()
-        bottomSheetFragment.show(this.supportFragmentManager, bottomSheetFragment.tag)
-    }
-
-    private fun displayHttpProxyUi() {
-        val isCustomHttpProxyEnabled = appConfig.isCustomHttpProxyEnabled()
-        b.settingsActivityHttpProxyContainer.visibility = View.VISIBLE
-        b.settingsActivityHttpProxySwitch.isChecked = isCustomHttpProxyEnabled
-
-        if (!appConfig.isCustomHttpProxyEnabled()) return
 
         io {
             val endpoint =
                 try {
                     appConfig.getHttpProxyDetails()
                 } catch (e: Exception) {
-                    Logger.e(
-                        LOG_TAG_PROXY,
-                        "Error fetching HTTP proxy details in displayHttpProxyUi: ${e.message}",
-                        e,
-                    )
+                    Logger.e(LOG_TAG_PROXY, "err fetching HTTP proxy details: ${e.message}", e)
                     null
                 }
-            if (endpoint == null) {
-                uiCtx {
-                    showToastUiCentered(
-                        this,
-                        getString(R.string.blocklist_update_check_failure),
-                        Toast.LENGTH_SHORT,
-                    )
-                }
-                return@io
-            }
-            val m = ProxyManager.ProxyMode.get(endpoint.proxyMode) ?: return@io
-
+            val m = endpoint?.let { ProxyManager.ProxyMode.get(it.proxyMode) } ?: return@io
             // only update below ui if its custom http proxy
             if (!m.isCustomHttp()) return@io
-
             uiCtx {
-                b.settingsActivityHttpProxyContainer.visibility = View.VISIBLE
-                if (b.settingsActivityHttpProxySwitch.isChecked) {
-                    b.settingsActivityHttpProxyDesc.text =
-                        getString(R.string.settings_http_proxy_desc, endpoint.proxyIP)
-                }
+                b.settingsActivityHttpProxyDesc.text =
+                    getString(R.string.settings_http_proxy_desc, endpoint.proxyIP)
             }
         }
     }
@@ -758,235 +584,12 @@ class ProxySettingsActivity : BaseActivity() {
         // disallowed in the proxy dialog / socks5 screen instead).
         b.settingsActivitySocks5Rl.alpha = if (canEnableProxy) 1f else 0.5f
         b.settingsActivityHttpProxyContainer.alpha = if (canEnableProxy) 1f else 0.5f
-        b.settingsActivityHttpProxySwitch.isEnabled = canEnableProxy
+        b.settingsActivityHttpProxyImg.isEnabled = canEnableProxy
 
         // Wireguard (gated only on canEnableProxy; it remains usable under proxy lockdown)
         b.settingsActivityWireguardImg.isEnabled = canEnableProxy
         b.settingsActivityWireguardContainer.isEnabled = canEnableProxy
         b.settingsActivityWireguardContainer.alpha = if (canEnableProxy) 1f else 0.5f
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun showHttpProxyDialog(
-        endpoint: ProxyEndpoint,
-        appNames: List<String>,
-        appName: String?,
-    ) {
-        val defaultHost = "http://127.0.0.1:8118"
-        var host: String
-        val dialogBinding = ProxyEditorState(this)
-        val builder =
-            MaterialAlertDialogBuilder(this, R.style.App_Dialog_NoDim).setContent { NetworkContent(dialogBinding.layout, scrollContainer = false) }
-        val lp = WindowManager.LayoutParams()
-        val dialog = builder.create()
-        dialog.show()
-        lp.copyFrom(dialog.window?.attributes)
-        lp.width = WindowManager.LayoutParams.MATCH_PARENT
-        lp.height = WindowManager.LayoutParams.WRAP_CONTENT
-
-        dialog.setCancelable(false)
-        dialog.setCanceledOnTouchOutside(false)
-        dialog.window?.attributes = lp
-        // Cap to 600dp on expanded windows; the MATCH_PARENT width set above would
-        // otherwise stretch the dialog edge-to-edge on foldables/tablets.
-        UIUtils.capDialogWidth(dialog)
-
-        val headerTxt: WgControlState = dialogBinding.dialogProxyHeader
-        val headerDesc: WgControlState = dialogBinding.dialogProxyHeaderDesc
-        val lockdownDesc: WgControlState = dialogBinding.dialogProxyHeaderLockdownDesc
-        val applyURLBtn = dialogBinding.dialogProxyApplyBtn
-        val cancelURLBtn = dialogBinding.dialogProxyCancelBtn
-        val appNameSpinner: NetworkSpinnerState = dialogBinding.dialogProxySpinnerAppname
-        val ipAddressEditText: WgControlState = dialogBinding.dialogProxyEditIp
-        val portLl: WgControlState = dialogBinding.dialogProxyPortHeader
-        val portEditText: WgControlState = dialogBinding.dialogProxyEditPort
-        val errorTxt: WgControlState = dialogBinding.dialogProxyErrorText
-        val userNameLl: WgControlState = dialogBinding.dialogProxyUsernameHeader
-        val passwordLl: WgControlState = dialogBinding.dialogProxyPasswordHeader
-        val udpBlockLl: WgControlState = dialogBinding.dialogProxyUdpHeader
-        val excludeAppLayout: WgControlState = dialogBinding.dialogProxyExcludeAppsHeader
-        val excludeAppCheckBox: WgControlState = dialogBinding.dialogProxyExcludeAppsCheck
-
-        // do not show the UDP block option for HTTP proxy
-        udpBlockLl.visibility = View.GONE
-        // do not show the port option for HTTP proxy
-        portLl.visibility = View.GONE
-        // do not show the username/password option for HTTP proxy
-        userNameLl.visibility = View.GONE
-        passwordLl.visibility = View.GONE
-        excludeAppCheckBox.isChecked = !persistentState.excludeAppsInProxy
-        excludeAppCheckBox.isEnabled = !VpnController.isVpnLockdown()
-        if (VpnController.isVpnLockdown()) {
-            excludeAppCheckBox.alpha = 0.5f
-        }
-        lockdownDesc.setOnClickListener {
-            dialog.dismiss()
-            UIUtils.openVpnProfile(this)
-        }
-        lockdownDesc.visibility = if (VpnController.isVpnLockdown()) View.VISIBLE else View.GONE
-
-        excludeAppLayout.setOnClickListener {
-            excludeAppCheckBox.isChecked = !excludeAppCheckBox.isChecked
-            logEvent(
-                "loopback proxy forwarder apps in HTTP Proxy toggled",
-                "loopback proxy forwarder apps in HTTP proxy: ${excludeAppCheckBox.isChecked}",
-            )
-        }
-
-        appNameSpinner.items = appNames
-        if (!endpoint.proxyIP.isNullOrBlank()) {
-            ipAddressEditText.setText(endpoint.proxyIP, TextView.BufferType.EDITABLE)
-            portEditText.setText(endpoint.proxyPort.toString(), TextView.BufferType.EDITABLE)
-            if (
-                !endpoint.proxyAppName.isNullOrBlank() &&
-                    endpoint.proxyAppName != getString(R.string.settings_app_list_default_app)
-            ) {
-                var position = 0
-                for ((i, item) in appNames.withIndex()) {
-                    if (item == appName) {
-                        position = i
-                    }
-                }
-                appNameSpinner.setSelection(position)
-            } else {
-                // no-op
-            }
-        } else {
-            ipAddressEditText.setText(defaultHost, TextView.BufferType.EDITABLE)
-        }
-
-        headerTxt.text = getString(R.string.http_proxy_dialog_heading)
-        headerDesc.text = getString(R.string.http_proxy_dialog_desc)
-
-        // Proxy lockdown: app selection is not allowed, force "None" (index 0) and
-        // inform the user if they attempt to change it.
-        if (persistentState.wgGlobalLockdown) {
-            appNameSpinner.setSelection(0)
-            appNameSpinner.alpha = 0.5f
-            appNameSpinner.setOnTouchListener { _, event ->
-                // the listener fires for every touch event (down, up); toast only once.
-                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                    showToastUiCentered(
-                        this,
-                        getString(R.string.lockdown_check_setting_disabled),
-                        Toast.LENGTH_SHORT,
-                    )
-                }
-                true
-            }
-        }
-
-        applyURLBtn.setOnClickListener {
-            host = ipAddressEditText.text.toString()
-            var isHostValid = true
-
-            if (host.isBlank()) {
-                isHostValid = false
-                errorTxt.text = getString(R.string.settings_http_proxy_error_text3)
-                errorTxt.visibility = View.VISIBLE
-            }
-
-            if (isHostValid) {
-                errorTxt.visibility = View.INVISIBLE
-                insertHttpProxyEndpointDB(endpoint.id, host, appNameSpinner.selectedItem.toString())
-                dialog.dismiss()
-                persistentState.excludeAppsInProxy = !excludeAppCheckBox.isChecked
-                showToastUiCentered(
-                    this,
-                    getString(R.string.settings_http_proxy_toast_success),
-                    Toast.LENGTH_SHORT,
-                )
-                if (b.settingsActivityHttpProxySwitch.isChecked) {
-                    b.settingsActivityHttpProxyDesc.text =
-                        getString(R.string.settings_http_proxy_desc, host)
-                }
-                logEvent(
-                    "Custom HTTP Proxy set",
-                    "custom HTTP proxy to $host, app: ${appNameSpinner.selectedItem}",
-                )
-            }
-        }
-        cancelURLBtn.setOnClickListener {
-            dialog.dismiss()
-            appConfig.removeProxy(AppConfig.ProxyType.HTTP, AppConfig.ProxyProvider.CUSTOM)
-            b.settingsActivityHttpProxyDesc.text = getString(R.string.settings_https_desc)
-            b.settingsActivityHttpProxySwitch.isChecked = false
-        }
-    }
-
-    private fun insertHttpProxyEndpointDB(id: Int, ip: String, appName: String) {
-        b.settingsActivityHttpProxySwitch.isEnabled = false
-        b.settingsActivityHttpProxySwitch.visibility = View.GONE
-        b.settingsActivityHttpProxyProgress.visibility = View.VISIBLE
-        delay(TimeUnit.SECONDS.toMillis(1L), lifecycleScope) {
-            b.settingsActivityHttpProxySwitch.isEnabled = true
-            b.settingsActivityHttpProxyProgress.visibility = View.GONE
-            b.settingsActivityHttpProxySwitch.visibility = View.VISIBLE
-        }
-        io {
-            val proxyName = Constants.HTTP
-            val mode = ProxyManager.ProxyMode.HTTP
-            val packageName =
-                if (appName == getString(R.string.settings_app_list_default_app)) {
-                    ""
-                } else {
-                    FirewallManager.getPackageNameByAppName(appName).orEmpty()
-                }
-            val proxyEndpoint =
-                constructProxy(
-                    id,
-                    proxyName,
-                    mode,
-                    packageName,
-                    ip,
-                    0,
-                    userName = "",
-                    password = "",
-                    false, /* isUdp */
-                )
-            if (proxyEndpoint != null) {
-                appConfig.updateCustomHttpProxy(proxyEndpoint)
-            }
-        }
-    }
-
-    private fun constructProxy(
-        id: Int,
-        name: String,
-        mode: ProxyManager.ProxyMode,
-        appName: String,
-        ip: String?,
-        port: Int,
-        userName: String,
-        password: String,
-        isUdp: Boolean,
-    ): ProxyEndpoint? {
-        if (ip.isNullOrEmpty()) {
-            Logger.w(LOG_TAG_PROXY, "cannot construct proxy with values ip: $ip, port: $port")
-            return null
-        }
-
-        if (mode == ProxyManager.ProxyMode.SOCKS5 && (!isValidPort(port))) {
-            Logger.w(LOG_TAG_PROXY, "cannot construct proxy with values ip: $ip, port: $port")
-            return null
-        }
-
-        return ProxyEndpoint(
-            id,
-            name,
-            mode.value,
-            proxyType = DEFAULT_PROXY_TYPE,
-            appName,
-            ip,
-            port,
-            userName,
-            password,
-            isSelected = true,
-            isCustom = true,
-            isUDP = isUdp,
-            modifiedDataTime = 0L,
-            latency = 0,
-        )
     }
 
     private fun logEvent(msg: String, details: String) {

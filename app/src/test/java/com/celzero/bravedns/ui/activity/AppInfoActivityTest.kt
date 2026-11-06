@@ -243,6 +243,8 @@ class AppInfoActivityTest {
         every { ProxyChoices.LiveSource.isSocks5Enabled() } returns true
         coEvery { ProxyChoices.LiveSource.socks5Endpoint() } returns S5_ENDPOINT
         every { ProxyChoices.LiveSource.isOrbotEnabled() } returns false
+        every { ProxyChoices.LiveSource.isHttpEnabled() } returns false
+        coEvery { ProxyChoices.LiveSource.httpEndpoint() } returns null
         every { ProxyChoices.LiveSource.isVpnOn() } returns false
         coEvery { ProxyChoices.LiveSource.backendStatus(any()) } returns null
         every { VpnController.uptimeMs() } returns 60_000L

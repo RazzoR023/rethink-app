@@ -3240,4 +3240,73 @@
     <string name="rules_dialog_domain_label" translatable="true">Domain or wildcard</string>
     <string name="rules_dialog_match" translatable="true">Match</string>
 
+    <string name="rules_dialog_applies_to_title" translatable="true">Applies to</string>
+    <string name="proxy_picker_http" translatable="true">HTTP(S) proxy</string>
+    <string name="proxy_picker_http_not_set" translatable="true">HTTP(S) · not set up</string>
+    <string name="proxy_page_type_wireguard" translatable="true">WireGuard</string>
+    <string name="proxy_page_type_socks5" translatable="true">SOCKS5</string>
+    <string name="proxy_page_type_http" translatable="true">HTTP(S) CONNECT</string>
+    <string name="proxy_page_type_orbot" translatable="true">Tor via Orbot</string>
+    <string name="proxy_page_title_wireguard" translatable="true">WireGuard config</string>
+    <string name="proxy_page_title_socks5" translatable="true">SOCKS5 proxy</string>
+    <string name="proxy_page_title_http" translatable="true">HTTP(S) proxy</string>
+    <string name="proxy_page_title_orbot" translatable="true">Orbot</string>
+    <string name="proxy_page_name_socks5" translatable="true">SOCKS5</string>
+    <string name="proxy_page_name_http" translatable="true">HTTP(S) proxy</string>
+    <string name="proxy_page_enable_cd" translatable="true">Use %1$s</string>
+    <string name="proxy_page_section_config" translatable="true">Configuration</string>
+    <string name="proxy_page_section_apps" translatable="true">Apps</string>
+    <string name="proxy_page_section_rules" translatable="true">IP and domain rules</string>
+    <string name="proxy_page_section_rules_n" translatable="true">IP and domain rules (%1$d)</string>
+    <string name="proxy_page_section_options" translatable="true">Options</string>
+    <string name="proxy_page_section_routing" translatable="true">Routing</string>
+    <string name="proxy_page_section_peers" translatable="true">Peers</string>
+    <string name="proxy_page_section_more" translatable="true">More</string>
+    <string name="proxy_page_apps_title" translatable="true">Apps routed via this proxy</string>
+    <string name="proxy_page_apps_none" translatable="true">None picked yet</string>
+    <string name="proxy_page_apps_warn_none" translatable="true">No apps picked: this proxy routes only rules below until you pick apps.</string>
+    <string name="proxy_page_apps_all_socks5" translatable="true">Every app not routed via WireGuard uses SOCKS5. Switch to Selected apps to pick them.</string>
+    <string name="proxy_page_apps_all_one_wg" translatable="true">This config routes all apps (Simple mode).</string>
+    <string name="proxy_page_apps_all_catch_all" translatable="true">Always-on: this config routes every app no other config takes.</string>
+    <string name="proxy_page_apps_all_http" translatable="true">The HTTP(S) proxy routes every app that no other proxy routes; it has no per-app list.</string>
+    <string name="proxy_page_mode_all" translatable="true">All apps</string>
+    <string name="proxy_page_mode_selected" translatable="true">Selected apps</string>
+    <string name="proxy_page_rules_empty" translatable="true">No rules route via %1$s. Add a domain or IP rule to send just that traffic here, for one app or for all apps.</string>
+    <string name="proxy_page_add_domain" translatable="true">Domain rule</string>
+    <string name="proxy_page_add_ip" translatable="true">IP rule</string>
+    <string name="proxy_page_rule_unroute_cd" translatable="true">Stop routing %1$s via this proxy</string>
+    <string name="proxy_page_rule_unrouted" translatable="true">%1$s no longer routes via this proxy</string>
+    <string name="proxy_page_scope_title" translatable="true">Rule applies to</string>
+    <string name="proxy_page_scope_search" translatable="true">Search apps</string>
+    <string name="proxy_page_logs_desc" translatable="true">Connections and DNS queries via this proxy</string>
+    <string name="proxy_page_status_vpn_off" translatable="true">Start Rethink to use it</string>
+    <string name="proxy_page_http_url" translatable="true">Proxy URL</string>
+    <string name="proxy_page_forwarder_none" translatable="true">None</string>
+    <string name="proxy_page_forwarder_desc_http" translatable="true">The app that runs the HTTP proxy on this device. Its own traffic is never sent back into the HTTP proxy.</string>
+    <string name="proxy_page_http_saved" translatable="true">HTTP(S) proxy settings saved</string>
+    <string name="proxy_page_orbot_not_installed" translatable="true">Orbot is not installed</string>
+    <string name="proxy_page_orbot_mode" translatable="true">Mode</string>
+    <string name="proxy_page_orbot_open" translatable="true">Open Orbot</string>
+    <string name="proxy_page_orbot_open_desc" translatable="true">Start or configure Tor in the Orbot app</string>
+    <string name="proxy_page_orbot_about" translatable="true">About Orbot and proxies</string>
+    <string name="proxy_page_orbot_install" translatable="true">Install Orbot</string>
+    <string name="proxy_page_orbot_website" translatable="true">Orbot website</string>
+    <string name="proxy_page_orbot_lockdown" translatable="true">Orbot is not available while proxy lockdown is on.</string>
+    <string name="proxy_page_wg_edit" translatable="true">Edit config</string>
+    <string name="proxy_page_wg_edit_desc" translatable="true">Interface keys, addresses, DNS, MTU</string>
+    <string name="proxy_page_wg_delete" translatable="true">Delete config</string>
+    <string name="proxy_page_wg_copy_key" translatable="true">Tap to copy</string>
+    <string name="proxy_page_wg_hop_none" translatable="true">Not relayed through another config</string>
+    <string name="proxy_page_wg_hop_via" translatable="true">Relayed via %1$s</string>
+    <string name="proxy_page_wg_edit_peer" translatable="true">Edit peer</string>
+    <string name="proxy_page_wg_delete_peer" translatable="true">Delete peer</string>
+    <string name="proxy_page_wg_no_peers" translatable="true">No peers</string>
+    <string name="proxy_page_wg_ssid_all" translatable="true">All Wi-Fi networks</string>
+    <string name="proxy_page_wg_ssid_edit" translatable="true">Edit Wi-Fi networks</string>
+    <string name="proxy_page_wg_id" translatable="true">id %1$d</string>
+    <plurals name="proxy_page_apps_count">
+        <item quantity="one">%1$d app</item>
+        <item quantity="other">%1$d apps</item>
+    </plurals>
+
 </resources>

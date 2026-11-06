@@ -92,6 +92,12 @@
             android:name=".ui.activity.Socks5ConfigActivity"
             android:finishOnTaskLaunch="true" />
         <activity
+            android:name=".ui.activity.HttpProxyActivity"
+            android:finishOnTaskLaunch="true" />
+        <activity
+            android:name=".ui.activity.OrbotProxyActivity"
+            android:finishOnTaskLaunch="true" />
+        <activity
             android:name=".ui.activity.MiscSettingsActivity"
             android:finishOnTaskLaunch="true" />
         <activity

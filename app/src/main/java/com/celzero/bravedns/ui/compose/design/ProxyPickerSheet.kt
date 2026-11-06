@@ -75,7 +75,7 @@ fun AppProxyPickerSheet(
     var excluded by remember { mutableStateOf(false) }
     LaunchedEffect(uid) {
         withContext(Dispatchers.IO) {
-            val list = choices.list()
+            val list = ProxyChoices.forApps(choices.list())
             val ex = FirewallManager.isAppExcludedFromProxy(uid)
             val sel = ProxyChoices.currentForApp(ProxyManager.getProxyForApp(uid), ex)
             val shown = ProxyChoices.withUnknown(list, listOfNotNull((sel.pick as? Pick.Via)?.proxyId) + sel.multipleIds)
@@ -258,6 +258,7 @@ internal fun ProxyChoices.Choice.displayTitle(): String = when (kind) {
     ProxyChoices.Kind.WIREGUARD -> name.ifBlank { proxyId }
     ProxyChoices.Kind.SOCKS5 -> stringResource(R.string.proxy_picker_socks5)
     ProxyChoices.Kind.ORBOT -> stringResource(R.string.proxy_picker_orbot)
+    ProxyChoices.Kind.HTTP -> stringResource(R.string.proxy_picker_http)
     ProxyChoices.Kind.OTHER -> proxyId
 }
 
@@ -276,6 +277,7 @@ internal fun ProxyChoices.Choice.displayDescription(): String? = when (kind) {
     }
     ProxyChoices.Kind.SOCKS5 -> endpoint ?: stringResource(R.string.proxy_picker_socks5_not_set)
     ProxyChoices.Kind.ORBOT -> null
+    ProxyChoices.Kind.HTTP -> endpoint ?: stringResource(R.string.proxy_picker_http_not_set)
     ProxyChoices.Kind.OTHER -> stringResource(R.string.proxy_picker_unknown)
 }
 

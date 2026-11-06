@@ -27,6 +27,7 @@ import androidx.room.RewriteQueriesToDropUnusedColumns
 import androidx.room.Transaction
 import androidx.room.Update
 import com.celzero.bravedns.util.Constants.Companion.UID_EVERYBODY
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CustomIpDao {
@@ -126,6 +127,10 @@ interface CustomIpDao {
     @Query("select count(*) from CustomIp") fun getRulesCount(): Int
 
     @Query("select count(*) from CustomIp where proxyCC = :cc") fun getRulesCountByCC(cc: String): Int
+
+    // rules (any uid) routing via a proxy, for the proxy's own page; re-emits on every write
+    @Query("select * from CustomIp where proxyId = :proxyId order by modifiedDateTime desc")
+    fun getRulesByProxyIdFlow(proxyId: String): Flow<List<CustomIp>>
 
     @Transaction
     fun tombstoneRulesByUid(oldUid: Int, newUid: Int) {

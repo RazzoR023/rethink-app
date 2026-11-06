@@ -58,7 +58,11 @@ class RulesTabState {
  * Observable state of the rules screen; CustomRuleActions does the I/O and updates it.
  * Replaces the per-view shims of the Compose port.
  */
-class RulesScreenState(val scope: RulesScope) {
+class RulesScreenState(
+    val scope: RulesScope,
+    /** the add dialog lets the user pick the app (or All apps) the rule applies to (proxy pages) */
+    val scopePickable: Boolean = false,
+) {
     val ip = RulesTabState()
     val domain = RulesTabState()
 
@@ -70,6 +74,9 @@ class RulesScreenState(val scope: RulesScope) {
     var details by mutableStateOf<RuleItem?>(null)
 
     var picker by mutableStateOf<PickerTarget?>(null)
+
+    /** the "Applies to" chooser of the add dialog is open (see [scopePickable]) */
+    var scopePicker by mutableStateOf(false)
 
     /** every proxy with its live status; null until loaded */
     var proxies by mutableStateOf<List<ProxyChoices.Choice>?>(null)

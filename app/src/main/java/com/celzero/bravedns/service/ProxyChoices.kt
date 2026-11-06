@@ -17,6 +17,7 @@ package com.celzero.bravedns.service
 
 import com.celzero.bravedns.data.AppConfig
 import com.celzero.bravedns.database.WgConfigFilesImmutable
+import com.celzero.bravedns.service.ProxyManager.ID_HTTP_BASE
 import com.celzero.bravedns.service.ProxyManager.ID_ORBOT_BASE
 import com.celzero.bravedns.service.ProxyManager.ID_S5_BASE
 import com.celzero.bravedns.service.ProxyManager.ID_WG_BASE
@@ -27,14 +28,16 @@ import org.koin.core.component.inject
 /**
  * The proxies an app or a rule can be routed through, with live status, for the shared proxy
  * picker (ui/compose/design/ProxyPickerSheet.kt). Lists every WireGuard config, the custom
- * SOCKS5 proxy and Orbot, whether they are on or not; nothing is persisted here.
+ * SOCKS5 proxy, Orbot and the custom HTTP proxy, whether they are on or not; nothing is
+ * persisted here. HTTP is a rule-only choice: it applies to all apps when on and is not an
+ * exclusive per-app proxy (see [forApps]).
  *
  * Also holds the picker's selection logic, kept free of Android so it can be unit tested:
  * [currentForApp] / [applyForApp] for app mode, [currentForRule] / [ruleProxyId] for rule mode.
  */
 class ProxyChoices(private val source: Source = LiveSource) {
 
-    enum class Kind { WIREGUARD, SOCKS5, ORBOT, OTHER }
+    enum class Kind { WIREGUARD, SOCKS5, ORBOT, HTTP, OTHER }
 
     /** Live state of a proxy: [OFF] when it is turned off in the app. */
     enum class Health { UP, WAITING, OFF, ERROR }
@@ -44,7 +47,7 @@ class ProxyChoices(private val source: Source = LiveSource) {
         val kind: Kind,
         /** WireGuard config name; empty for SOCKS5 / Orbot / unknown (the UI names those). */
         val name: String,
-        /** SOCKS5 "host:port", null if not set up or not SOCKS5. */
+        /** SOCKS5 "host:port" / HTTP proxy url, null if not set up or another kind. */
         val endpoint: String? = null,
         /** Turned on in the app (wg config active, SOCKS5 enabled, Orbot is the proxy). */
         val enabled: Boolean,
@@ -62,12 +65,14 @@ class ProxyChoices(private val source: Source = LiveSource) {
         fun isSocks5Enabled(): Boolean
         suspend fun socks5Endpoint(): String?
         fun isOrbotEnabled(): Boolean
+        fun isHttpEnabled(): Boolean
+        suspend fun httpEndpoint(): String?
         fun isVpnOn(): Boolean
         /** firestack status (Backend.TOK, ...) of a proxy, null if unknown / not running. */
         suspend fun backendStatus(proxyId: String): Int?
     }
 
-    /** All selectable proxies: WireGuard configs by id, then SOCKS5, then Orbot. */
+    /** All selectable proxies: WireGuard configs by id, then SOCKS5, Orbot, HTTP. */
     suspend fun list(): List<Choice> {
         val vpnOn = source.isVpnOn()
         suspend fun healthOf(id: String, enabled: Boolean): Health {
@@ -93,7 +98,9 @@ class ProxyChoices(private val source: Source = LiveSource) {
         val s5 = Choice(ID_S5_BASE, Kind.SOCKS5, "", source.socks5Endpoint(), s5On, healthOf(ID_S5_BASE, s5On))
         val orbotOn = source.isOrbotEnabled()
         val orbot = Choice(ID_ORBOT_BASE, Kind.ORBOT, "", null, orbotOn, healthOf(ID_ORBOT_BASE, orbotOn))
-        return wgs + s5 + orbot
+        val httpOn = source.isHttpEnabled()
+        val http = Choice(ID_HTTP_BASE, Kind.HTTP, "", source.httpEndpoint(), httpOn, healthOf(ID_HTTP_BASE, httpOn))
+        return wgs + s5 + orbot + http
     }
 
     /** What a picker row stands for. */
@@ -124,6 +131,12 @@ class ProxyChoices(private val source: Source = LiveSource) {
                 else -> Health.WAITING // starting, waiting, paused, stopped or unknown
             }
         }
+
+        /**
+         * The choices an app can be assigned (ProxyManager.setProxyForApp takes only exclusive
+         * ids): everything but HTTP, which routes all apps when on.
+         */
+        fun forApps(choices: List<Choice>): List<Choice> = choices.filter { it.kind != Kind.HTTP }
 
         /** Excluded-from-proxy wins in routing, so it wins here too. */
         fun currentForApp(appProxy: ProxyManager.AppProxy, excluded: Boolean): AppSelection {
@@ -209,6 +222,13 @@ class ProxyChoices(private val source: Source = LiveSource) {
         }
 
         override fun isOrbotEnabled(): Boolean = appConfig.isOrbotProxyEnabled()
+
+        override fun isHttpEnabled(): Boolean = appConfig.isCustomHttpProxyEnabled()
+
+        override suspend fun httpEndpoint(): String? {
+            val ep = appConfig.getHttpProxyDetails() ?: return null
+            return ep.proxyIP?.takeUnless { it.isBlank() }
+        }
 
         override fun isVpnOn(): Boolean = VpnController.hasTunnel()
 

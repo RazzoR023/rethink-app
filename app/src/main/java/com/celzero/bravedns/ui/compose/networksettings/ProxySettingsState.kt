@@ -43,7 +43,7 @@ class ProxySettingsState(context: Context) {
     val node30 = WgControlState(context, checkable = false)
     val node31 = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_orbot_heading) }
     val settingsActivityHttpOrbotDesc = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_orbot_desc) }
-    val settingsActivityOrbotImg = WgControlState(context, checkable = false) .apply { imageResource = R.drawable.ic_arrow_down_small }
+    val settingsActivityOrbotImg = WgControlState(context, checkable = false) .apply { imageResource = R.drawable.ic_right_arrow_white }
     val otherTitle = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.category_name_others); textColor = UIUtils.fetchColor(context, androidx.appcompat.R.attr.colorPrimary) }
     val node35 = WgControlState(context, checkable = false)
     val node36 = WgControlState(context, checkable = false)
@@ -59,8 +59,7 @@ class ProxySettingsState(context: Context) {
     val node46 = WgControlState(context, checkable = false)
     val node47 = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_https_heading) }
     val settingsActivityHttpProxyDesc = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_https_desc) }
-    val settingsActivityHttpProxySwitch = WgControlState(context, checkable = true) .apply { switchThemeOverlay = R.style.CustomCompoundButtonSwitch }
-    val settingsActivityHttpProxyProgress = WgControlState(context, checkable = false)
+    val settingsActivityHttpProxyImg = WgControlState(context, checkable = false) .apply { imageResource = R.drawable.ic_right_arrow_white }
     val refreshing = androidx.compose.runtime.mutableStateMapOf<WgControlState, NetworkRefreshState>()
     private var refreshGeneration = 0
     fun startRefresh(control: WgControlState, animation: android.view.animation.Animation? = null) {
@@ -133,16 +132,14 @@ class ProxySettingsState(context: Context) {
                             NetworkNode(NetworkKind.TEXT, control = node47, appearance = androidx.appcompat.R.style.TextAppearance_AppCompat_Subhead, textSizeRes = R.dimen.large_font_text_view),
                             NetworkNode(NetworkKind.TEXT, control = settingsActivityHttpProxyDesc, key = "network.settings_activity_http_proxy_desc", textSizeRes = R.dimen.default_font_text_view, padding = NetworkInsets(0f, 5f, 0f, 5f))
                         )),
-                        NetworkNode(NetworkKind.OVERLAY, children = listOf(NetworkNode(NetworkKind.SWITCH, control = settingsActivityHttpProxySwitch, key = "network.settings_activity_http_proxy_switch", padding = NetworkInsets(10f, 10f, 10f, 10f), trailing = true), NetworkNode(NetworkKind.PROGRESS, control = settingsActivityHttpProxyProgress, key = "network.settings_activity_http_proxy_progress", margin = NetworkInsets(8f, 0f, 8f, 0f), padding = NetworkInsets(10f, 10f, 10f, 10f), width = 48f, height = 48f, trailing = true)))
+                        NetworkNode(NetworkKind.ICON, control = settingsActivityHttpProxyImg, key = "network.settings_activity_http_proxy_img", margin = NetworkInsets(0f, 0f, 10f, 0f), padding = NetworkInsets(10f, 10f, 10f, 10f), trailing = true)
                     ))
                 ))
             ))
         ))
     ))
     fun saveChecks(bundle: Bundle) {
-        bundle.putBoolean("compose.ProxySettingsState.settingsActivityHttpProxySwitch", settingsActivityHttpProxySwitch.isChecked)
     }
     fun restoreChecks(bundle: Bundle) {
-        if (bundle.containsKey("compose.ProxySettingsState.settingsActivityHttpProxySwitch")) settingsActivityHttpProxySwitch.isChecked = bundle.getBoolean("compose.ProxySettingsState.settingsActivityHttpProxySwitch")
     }
 }

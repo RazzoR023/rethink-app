@@ -4076,6 +4076,12 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
         io("socks5Fwdr") { handleCustomSocks5Change() }
     }
 
+    // the custom http endpoint (url / forwarder app) changed while it is on
+    fun onCustomHttpProxyChanged() {
+        logd("custom http proxy changed")
+        io("httpProxy") { handleProxyChange() }
+    }
+
     suspend fun readdHttpProxy() {
         logd("readd http proxy")
         vpnAdapter?.readdHttpProxy()

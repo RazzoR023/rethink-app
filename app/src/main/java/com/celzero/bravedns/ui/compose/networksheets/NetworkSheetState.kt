@@ -8,37 +8,6 @@ import androidx.compose.runtime.*
 import com.celzero.bravedns.R
 import com.celzero.bravedns.ui.compose.wireguard.WgControlState
 
-/** View-free presentation state. Radio clicks check before the original click callback, as RadioButton does. */
-class OrbotSheetState(context: Context) {
-    val bsOrbotApp = WgControlState(context)
-    val bsOrbotRadioNone = WgControlState(context)
-    val bsOrbotRadioSocks5 = WgControlState(context)
-    val bsOrbotRadioHttp = WgControlState(context)
-    val bsOrbotRadioBoth = WgControlState(context)
-    val bsOrbotNoneRl = WgControlState(context)
-    val bsSocks5OrbotRl = WgControlState(context)
-    val bsOrbotHttpRl = WgControlState(context)
-    val bsOrbotBothRl = WgControlState(context).apply { visibility = View.GONE }
-    val bsOrbotRadioGroup = WgControlState(context)
-    val orbotInfoIcon = WgControlState(context)
-    val orbotIcon = WgControlState(context).apply { imageResource = R.drawable.orbot_enabled }
-    val orbotStatus = WgControlState(context).apply { text = context.getString(R.string.orbot_none_desc) }
-    val includeApplications = WgControlState(context).apply { text = context.getString(R.string.add_remove_apps) }
-    var animating by mutableStateOf(false)
-    private val radios get() = listOf(bsOrbotRadioHttp, bsOrbotRadioSocks5, bsOrbotRadioBoth, bsOrbotRadioNone)
-    fun saveChecks(bundle: Bundle) { radios.forEachIndexed { index, radio -> bundle.putBoolean("compose.orbot.$index", radio.isChecked) } }
-    fun restoreChecks(bundle: Bundle?) { radios.forEachIndexed { index, radio ->
-        if (bundle?.containsKey("compose.orbot.$index") == true) radio.isChecked = bundle.getBoolean("compose.orbot.$index")
-    } }
-}
-
-fun clickSheetRadio(radio: WgControlState) {
-    if (!radio.isEnabled || !radio.isClickable) return
-    // Android RadioButton.toggle never unchecks an already checked radio.
-    radio.isChecked = true
-    radio.callOnClick()
-}
-
 class BackupRestoreSheetState(context: Context) {
     val brbsBackup = WgControlState(context)
     val brbsRestore = WgControlState(context)

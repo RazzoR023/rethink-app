@@ -181,6 +181,7 @@ object ProxyManager : KoinComponent {
     fun proxyDisplayName(pid: String): String {
         if (pid == ID_S5_BASE) return AppConfig.ProxyType.SOCKS5.name
         if (pid == ID_ORBOT_BASE) return ORBOT_PROXY_NAME
+        if (pid == ID_HTTP_BASE) return AppConfig.ProxyType.HTTP.name
         if (WireguardManager.isWgProxyId(pid)) {
             val id = pid.removePrefix(ID_WG_BASE).toIntOrNull() ?: return pid
             return WireguardManager.getConfigFilesById(id)?.name ?: pid

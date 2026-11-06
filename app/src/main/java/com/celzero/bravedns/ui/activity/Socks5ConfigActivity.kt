@@ -17,27 +17,26 @@ package com.celzero.bravedns.ui.activity
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.os.Bundle
 import android.text.format.DateUtils
-import android.view.View
-import android.widget.CompoundButton
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.widget.doAfterTextChanged
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import dev.androidbroadcast.vbpd.viewBinding
+import androidx.lifecycle.repeatOnLifecycle
 import com.celzero.bravedns.R
 import com.celzero.bravedns.data.AppConfig
+import com.celzero.bravedns.database.CustomDomainDAO
+import com.celzero.bravedns.database.CustomIpDao
 import com.celzero.bravedns.database.EventSource
 import com.celzero.bravedns.database.EventType
 import com.celzero.bravedns.database.ProxyEndpoint
 import com.celzero.bravedns.database.ProxyEndpoint.Companion.DEFAULT_PROXY_TYPE
 import com.celzero.bravedns.database.RefreshDatabase
 import com.celzero.bravedns.database.Severity
-import com.celzero.bravedns.databinding.ActivitySocks5ConfigBinding
 import com.celzero.bravedns.service.EventLogger
 import com.celzero.bravedns.service.FirewallManager
 import com.celzero.bravedns.service.PersistentState
@@ -48,20 +47,24 @@ import com.celzero.bravedns.service.WireguardManager
 import com.celzero.bravedns.service.WireguardManager.WG_UPTIME_THRESHOLD
 import com.celzero.bravedns.ui.BaseActivity
 import com.celzero.bravedns.ui.activity.NetworkLogsActivity.Companion.RULES_SEARCH_ID_RPN
+import com.celzero.bravedns.ui.compose.RethinkTheme
+import com.celzero.bravedns.ui.compose.proxy.ProxyDetailLogic
+import com.celzero.bravedns.ui.compose.proxy.ProxyRulesController
+import com.celzero.bravedns.ui.compose.proxy.Socks5Actions
+import com.celzero.bravedns.ui.compose.proxy.Socks5Form
+import com.celzero.bravedns.ui.compose.proxy.Socks5FormLogic
+import com.celzero.bravedns.ui.compose.proxy.Socks5PageState
+import com.celzero.bravedns.ui.compose.proxy.Socks5Saved
+import com.celzero.bravedns.ui.compose.proxy.Socks5Screen
+import com.celzero.bravedns.ui.compose.rules.RuleKind
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.Logger
 import com.celzero.bravedns.util.Logger.LOG_TAG_PROXY
 import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.UIUtils
-import com.celzero.bravedns.util.SnackbarHelper.applySystemBarEdgeInsets
-import com.celzero.bravedns.util.UIUtils.fetchColor
-import com.celzero.bravedns.util.UIUtils.fetchToggleBtnColors
-import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.isAtleastQ
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
 import com.celzero.firestack.backend.RouterStats
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -71,17 +74,21 @@ import org.koin.android.ext.android.inject
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Custom SOCKS5 proxy screen, opened from proxy settings the same way a WireGuard config is.
- * Holds the on/off state, the mode (simple: all apps, advanced: the apps picked in the shared,
- * exclusive picker), the server endpoint and the forwarder app options.
+ * Custom SOCKS5 proxy page, opened from proxy settings: on/off, the server endpoint, the apps
+ * (All apps, or the ones picked in the shared exclusive picker), the IP / domain rules routed
+ * via SOCKS5, the forwarder app options and logs. Layout: ui/compose/proxy (shared with the
+ * WireGuard, HTTP and Orbot pages); all reads / writes are here.
  */
-class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
-    private val b by viewBinding(ActivitySocks5ConfigBinding::bind)
-
+class Socks5ConfigActivity : BaseActivity(), Socks5Actions {
     private val persistentState by inject<PersistentState>()
     private val appConfig by inject<AppConfig>()
     private val eventLogger by inject<EventLogger>()
     private val rdb by inject<RefreshDatabase>()
+    private val ipDao by inject<CustomIpDao>()
+    private val domainDao by inject<CustomDomainDAO>()
+
+    private lateinit var state: Socks5PageState
+    private lateinit var rules: ProxyRulesController
 
     // last saved endpoint; never mutated, a new instance is saved on every change
     private var endpoint: ProxyEndpoint? = null
@@ -90,18 +97,13 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
     private val discardCallback =
         object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() {
-                showDiscardDialog()
+                state.discardDialog = true
             }
         }
 
-    private val enableListener =
-        CompoundButton.OnCheckedChangeListener { _, checked -> onEnableToggled(checked) }
-
-    private val loopbackListener =
-        CompoundButton.OnCheckedChangeListener { _, checked -> onLoopbackToggled(checked) }
-
     companion object {
         private const val STATS_POLL_MS = 2_000L
+        private const val PROXY_REFRESH_MS = 5_000L
 
         fun newIntent(context: Context): Intent = Intent(context, Socks5ConfigActivity::class.java)
     }
@@ -115,9 +117,6 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
         theme.applyStyle(Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme), true)
         super.onCreate(savedInstanceState)
 
-        // edge-to-edge is on (BaseActivity); keep the content clear of the status/nav bars
-        b.root.applySystemBarEdgeInsets()
-
         if (isAtleastQ()) {
             val controller = WindowInsetsControllerCompat(window, window.decorView)
             controller.isAppearanceLightNavigationBars =
@@ -125,9 +124,24 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             window.isNavigationBarContrastEnforced = false
         }
 
+        state = Socks5PageState(getString(R.string.proxy_page_name_socks5))
+        rules = ProxyRulesController.create(this, ID_S5_BASE, lifecycleScope, ipDao, domainDao,
+            notify = { id, args -> showToastUiCentered(this, getString(id, *args), Toast.LENGTH_SHORT) },
+            log = { kind, details -> logRule(eventLogger, kind, details) },
+        )
+        rules.start()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    rules.refreshProxies()
+                    delay(PROXY_REFRESH_MS)
+                }
+            }
+        }
+        setContent { RethinkTheme { Socks5Screen(state, this, rules) } }
+
         onBackPressedDispatcher.addCallback(this, discardCallback)
-        setupClickListeners()
-        loadEndpoint(fillForm = savedInstanceState == null)
+        loadEndpoint()
     }
 
     override fun onResume() {
@@ -143,16 +157,12 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
         statsJob = null
     }
 
-    private fun loadEndpoint(fillForm: Boolean) {
+    private fun loadEndpoint() {
         io {
             val ep = appConfig.getSocks5ProxyDetails()
             if (ep == null) {
                 uiCtx {
-                    showToastUiCentered(
-                        this,
-                        getString(R.string.blocklist_update_check_failure),
-                        Toast.LENGTH_SHORT,
-                    )
+                    showToastUiCentered(this, getString(R.string.blocklist_update_check_failure), Toast.LENGTH_SHORT)
                     finish()
                 }
                 return@io
@@ -160,62 +170,34 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             val fwdrName = forwarderAppName(ep)
             uiCtx {
                 endpoint = ep
-                if (fillForm) fillForm(ep)
-                updateEndpointUi(ep, fwdrName)
-                updateDirtyState()
+                // a form restored by the system is not overwritten
+                if (state.saved == null) state.form = Socks5FormLogic.form(saved(ep))
+                applyEndpoint(ep, fwdrName)
             }
         }
     }
 
-    private fun fillForm(ep: ProxyEndpoint) {
-        b.hostEdit.setText(baseHost(ep))
-        b.portEdit.setText(basePort(ep))
-        b.usernameEdit.setText(ep.userName.orEmpty())
-        b.passwordEdit.setText(ep.password.orEmpty())
-        clearFieldErrors()
+    private fun saved(ep: ProxyEndpoint) = Socks5Saved(ep.proxyIP, ep.proxyPort, ep.userName, ep.password)
+
+    private fun applyEndpoint(ep: ProxyEndpoint, fwdrName: String?) {
+        state.saved = saved(ep)
+        state.forwarder = fwdrName
+        val detail = if (ep.proxyIP.isNullOrBlank()) null else "${ep.proxyIP}:${ep.proxyPort}"
+        val auth = if (ep.userName.isNullOrBlank()) null else getString(R.string.socks5_auth_user, ep.userName)
+        state.header = state.header.copy(detail = listOfNotNull(detail, auth).joinToString(" · ").ifEmpty { null })
+        updateDirtyState()
     }
 
-    private fun updateEndpointUi(ep: ProxyEndpoint, fwdrName: String?) {
-        b.endpointText.text =
-            if (ep.proxyIP.isNullOrBlank()) {
-                getString(R.string.settings_app_list_default_app)
-            } else {
-                "${ep.proxyIP}:${ep.proxyPort}"
-            }
-        b.authText.text =
-            if (ep.userName.isNullOrBlank()) {
-                getString(R.string.socks5_auth_none)
-            } else {
-                getString(R.string.socks5_auth_user, ep.userName)
-            }
-        if (fwdrName == null) {
-            b.forwarderText.visibility = View.GONE
-            b.forwarderValueText.text = getString(R.string.settings_app_list_default_app)
-        } else {
-            b.forwarderText.visibility = View.VISIBLE
-            b.forwarderText.text = getString(R.string.socks5_forwarder_value, fwdrName)
-            b.forwarderValueText.text = fwdrName
-        }
-    }
-
-    // on/off switch, mode, lockdown hints, app count; everything that may change outside this screen
+    // on/off, mode, lockdown hints, app count; everything that may change outside this screen
     private fun refreshStateUi() {
-        setEnableSwitch(appConfig.isCustomSocks5Enabled())
-        showMode(persistentState.customSocks5AllApps)
-
+        state.header = state.header.copy(enabled = appConfig.isCustomSocks5Enabled())
+        state.allApps = persistentState.customSocks5AllApps
         // in android's vpn lockdown the forwarder can't be kept out of the tunnel (see
-        // BraveVPNService), so it is always looped back; show that instead of the setting
-        val vpnLockdown = VpnController.isVpnLockdown()
-        b.loopbackSwitch.setOnCheckedChangeListener(null)
-        b.loopbackSwitch.isChecked = vpnLockdown || !persistentState.excludeAppsInProxy
-        b.loopbackSwitch.setOnCheckedChangeListener(loopbackListener)
-        b.loopbackSwitch.isEnabled = !vpnLockdown
-        b.loopbackRl.alpha = if (vpnLockdown) 0.5f else 1f
-        b.lockdownDesc.visibility = if (vpnLockdown) View.VISIBLE else View.GONE
-
+        // BraveVPNService), so it is always looped back; shown instead of the setting
+        state.vpnLockdown = VpnController.isVpnLockdown()
+        state.loopback = !persistentState.excludeAppsInProxy
         // proxy lockdown forces the forwarder to none (see the old socks5 dialog)
-        b.forwarderRl.alpha = if (persistentState.wgGlobalLockdown) 0.5f else 1f
-
+        state.proxyLockdown = persistentState.wgGlobalLockdown
         refreshAppCount()
     }
 
@@ -223,42 +205,8 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
         io {
             ProxyManager.ensureLoaded()
             val count = ProxyManager.getAppCountForProxy(ID_S5_BASE)
-            uiCtx {
-                b.appsLabel.text = getString(R.string.settings_socks5_apps_btn, count.toString())
-                val noApps =
-                    count == 0 &&
-                        appConfig.isCustomSocks5Enabled() &&
-                        !persistentState.customSocks5AllApps
-                b.noAppsHint.visibility = if (noApps) View.VISIBLE else View.GONE
-            }
+            uiCtx { state.appCount = count }
         }
-    }
-
-    // simple mode routes all apps, so there is nothing to pick
-    private fun showMode(allApps: Boolean) {
-        if (allApps) {
-            selectToggleBtnUi(b.simpleToggleBtn)
-            unselectToggleBtnUi(b.advancedToggleBtn)
-            b.appsBtn.visibility = View.GONE
-            b.appsDescText.text = getString(R.string.socks5_simple_desc)
-        } else {
-            selectToggleBtnUi(b.advancedToggleBtn)
-            unselectToggleBtnUi(b.simpleToggleBtn)
-            b.appsBtn.visibility = View.VISIBLE
-            b.appsDescText.text = getString(R.string.socks5_apps_desc)
-        }
-    }
-
-    private fun selectToggleBtnUi(btn: MaterialButton) {
-        btn.backgroundTintList =
-            ColorStateList.valueOf(fetchToggleBtnColors(this, R.color.accentGood))
-        btn.setTextColor(fetchColor(this, R.attr.homeScreenHeaderTextColor))
-    }
-
-    private fun unselectToggleBtnUi(btn: MaterialButton) {
-        btn.backgroundTintList =
-            ColorStateList.valueOf(fetchToggleBtnColors(this, R.color.defaultToggleBtnBg))
-        btn.setTextColor(fetchColor(this, R.attr.primaryTextColor))
     }
 
     // one-wg and catch-all wireguard also take every app; only one of them can
@@ -267,96 +215,38 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             WireguardManager.getActiveCatchAllConfig().isNotEmpty()
     }
 
-    private fun onModePicked(allApps: Boolean) {
-        if (allApps == persistentState.customSocks5AllApps) {
-            showMode(allApps)
-            return
-        }
+    override fun back() {
+        onBackPressedDispatcher.onBackPressed()
+    }
+
+    override fun setAllApps(allApps: Boolean) {
+        if (allApps == persistentState.customSocks5AllApps) return
         if (allApps && isWireguardRoutingAllApps()) {
-            showToastUiCentered(
-                this,
-                getString(R.string.socks5_all_apps_wg_conflict),
-                Toast.LENGTH_LONG,
-            )
-            showMode(false)
+            showToastUiCentered(this, getString(R.string.socks5_all_apps_wg_conflict), Toast.LENGTH_LONG)
             return
         }
         persistentState.customSocks5AllApps = allApps
-        showMode(allApps)
+        state.allApps = allApps
         refreshAppCount()
         logEvent("Custom SOCKS5 mode changed", "custom SOCKS5 all apps: $allApps")
     }
 
-    private fun setEnableSwitch(checked: Boolean) {
-        b.enableSwitch.setOnCheckedChangeListener(null)
-        b.enableSwitch.isChecked = checked
-        b.enableSwitch.setOnCheckedChangeListener(enableListener)
-    }
-
-    private fun setupClickListeners() {
-        b.enableSwitch.setOnCheckedChangeListener(enableListener)
-
-        b.simpleToggleBtn.setOnClickListener { onModePicked(allApps = true) }
-        b.advancedToggleBtn.setOnClickListener { onModePicked(allApps = false) }
-
-        b.appsBtn.setOnClickListener { openAppsPicker() }
-
-        b.logsBtn.setOnClickListener { openLogs() }
-
-        b.hostEdit.doAfterTextChanged { onFieldEdited() }
-        b.portEdit.doAfterTextChanged { onFieldEdited() }
-        b.usernameEdit.doAfterTextChanged { onFieldEdited() }
-        b.passwordEdit.doAfterTextChanged { onFieldEdited() }
-
-        b.saveBtn.setOnClickListener { saveForm(enable = false) }
-
-        b.revertBtn.setOnClickListener { endpoint?.let { fillForm(it) } }
-
-        b.forwarderRl.setOnClickListener { openForwarderPicker() }
-
-        b.loopbackRl.setOnClickListener {
-            if (b.loopbackSwitch.isEnabled) b.loopbackSwitch.isChecked = !b.loopbackSwitch.isChecked
-        }
-
-        b.loopbackSwitch.setOnCheckedChangeListener(loopbackListener)
-
-        b.lockdownDesc.setOnClickListener { UIUtils.openVpnProfile(this) }
-    }
-
-    private fun onLoopbackToggled(checked: Boolean) {
-        if (persistentState.excludeAppsInProxy == !checked) return
-        persistentState.excludeAppsInProxy = !checked
-        logEvent(
-            "loopback proxy forwarder apps SOCKS5 Proxy toggled",
-            "loopback proxy forwarder apps in SOCKS5 proxy: $checked",
-        )
-    }
-
-    private fun onEnableToggled(checked: Boolean) {
-        if (!checked) {
+    override fun toggle(on: Boolean) {
+        if (!on) {
             appConfig.removeProxy(AppConfig.ProxyType.SOCKS5, AppConfig.ProxyProvider.CUSTOM)
             logEvent("Custom SOCKS5 Proxy disabled", "disabled custom SOCKS5 proxy")
+            state.header = state.header.copy(enabled = false)
             afterStateChange()
             return
         }
 
         if (!appConfig.canEnableSocks5Proxy()) {
-            showToastUiCentered(
-                this,
-                getString(R.string.settings_lock_down_proxy_desc),
-                Toast.LENGTH_SHORT,
-            )
-            setEnableSwitch(false)
+            showToastUiCentered(this, getString(R.string.settings_lock_down_proxy_desc), Toast.LENGTH_SHORT)
             return
         }
 
         if (persistentState.customSocks5AllApps && isWireguardRoutingAllApps()) {
-            showToastUiCentered(
-                this,
-                getString(R.string.socks5_all_apps_wg_conflict),
-                Toast.LENGTH_LONG,
-            )
-            setEnableSwitch(false)
+            showToastUiCentered(this, getString(R.string.socks5_all_apps_wg_conflict), Toast.LENGTH_LONG)
             return
         }
 
@@ -369,89 +259,37 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
         startStatsPolling()
     }
 
-    private fun onFieldEdited() {
-        clearFieldErrors()
+    override fun edit(form: Socks5Form) {
+        state.form = form
         updateDirtyState()
     }
 
-    // never configured: the form suggests the usual local forwarder address
-    private fun baseHost(ep: ProxyEndpoint): String =
-        ep.proxyIP?.takeUnless { it.isBlank() } ?: Constants.SOCKS_DEFAULT_IP
+    override fun save() = saveForm(enable = false)
 
-    private fun basePort(ep: ProxyEndpoint): String =
-        if (ep.proxyIP.isNullOrBlank()) Constants.SOCKS_DEFAULT_PORT.toString()
-        else ep.proxyPort.toString()
-
-    private fun isFormDirty(): Boolean {
-        val ep = endpoint ?: return false
-        return b.hostEdit.text.toString().trim() != baseHost(ep) ||
-            b.portEdit.text.toString().trim() != basePort(ep) ||
-            b.usernameEdit.text.toString() != ep.userName.orEmpty() ||
-            b.passwordEdit.text.toString() != ep.password.orEmpty()
+    override fun revert() {
+        val ep = endpoint ?: return
+        state.form = Socks5FormLogic.form(saved(ep))
+        updateDirtyState()
     }
 
     private fun updateDirtyState() {
-        val dirty = isFormDirty()
-        b.saveBtn.isEnabled = dirty
-        b.revertBtn.isEnabled = dirty
-        b.unsavedText.visibility = if (dirty) View.VISIBLE else View.INVISIBLE
-        discardCallback.isEnabled = dirty
-    }
-
-    private fun clearFieldErrors() {
-        b.hostLayout.error = null
-        b.portLayout.error = null
-    }
-
-    // returns host and port, or null after flagging the bad field
-    private fun validateForm(): Pair<String, Int>? {
-        val host = b.hostEdit.text.toString().trim()
-        if (host.isBlank()) {
-            b.hostLayout.error = getString(R.string.settings_http_proxy_error_text3)
-            return null
-        }
-        val port = b.portEdit.text.toString().trim().toIntOrNull()
-        if (port == null) {
-            b.portLayout.error = getString(R.string.settings_http_proxy_error_text2)
-            return null
-        }
-        val isValid =
-            if (Utilities.isLanIpv4(host)) {
-                Utilities.isValidLocalPort(port)
-            } else {
-                Utilities.isValidPort(port)
-            }
-        if (!isValid || !Utilities.isValidPort(port)) {
-            b.portLayout.error = getString(R.string.settings_http_proxy_error_text1)
-            return null
-        }
-        return Pair(host, port)
+        discardCallback.isEnabled = state.dirty
     }
 
     private fun saveForm(enable: Boolean) {
         val ep = endpoint ?: return
-        val hostPort = validateForm()
-        if (hostPort == null) {
-            if (enable) setEnableSwitch(false)
-            return
+        val form = state.form
+        val (host, port) = when (val r = Socks5FormLogic.validate(form)) {
+            is Socks5FormLogic.Result.Invalid -> { state.form = r.form; return }
+            is Socks5FormLogic.Result.Ok -> r.host to r.port
         }
-        val (host, port) = hostPort
-        val updated =
-            copyOf(
-                ep,
-                ip = host,
-                port = port,
-                userName = b.usernameEdit.text.toString(),
-                password = b.passwordEdit.text.toString(),
-                fwdrPkg = ep.proxyAppName.orEmpty(),
-            )
+        val updated = copyOf(ep, host, port, form.userName, form.password, ep.proxyAppName.orEmpty())
         persist(updated, enable)
         logEvent("Custom SOCKS5 Proxy set", "custom SOCKS5 proxy to $host:$port, enable: $enable")
     }
 
-    private fun persist(updated: ProxyEndpoint, enable: Boolean) {
-        b.enableSwitch.isEnabled = false
-        b.enableProgress.visibility = View.VISIBLE
+    private fun persist(updated: ProxyEndpoint, enable: Boolean, resetForm: Boolean = true) {
+        state.header = state.header.copy(busy = true)
         io {
             if (enable) {
                 appConfig.updateCustomSocks5Proxy(updated)
@@ -463,20 +301,16 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             val noApps = ProxyManager.getAppCountForProxy(ID_S5_BASE) == 0
             uiCtx {
                 endpoint = updated
-                b.enableSwitch.isEnabled = true
-                b.enableProgress.visibility = View.GONE
-                updateEndpointUi(updated, fwdrName)
-                updateDirtyState()
+                state.header = state.header.copy(busy = false, enabled = appConfig.isCustomSocks5Enabled())
+                // the form now matches what is stored (trimmed); a forwarder change keeps edits
+                if (resetForm) state.form = Socks5FormLogic.form(saved(updated))
+                applyEndpoint(updated, fwdrName)
                 afterStateChange()
                 if (!enable) {
-                    showToastUiCentered(
-                        this,
-                        getString(R.string.socks5_saved_toast),
-                        Toast.LENGTH_SHORT,
-                    )
+                    showToastUiCentered(this, getString(R.string.socks5_saved_toast), Toast.LENGTH_SHORT)
                 }
                 // in advanced mode socks5 routes no app until some are picked
-                if (enable && noApps && !persistentState.customSocks5AllApps) openAppsPicker()
+                if (enable && noApps && !persistentState.customSocks5AllApps) openApps()
             }
         }
     }
@@ -513,13 +347,9 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             ?.let { FirewallManager.getAppInfoByPackage(it)?.appName ?: it }
     }
 
-    private fun openForwarderPicker() {
+    override fun openForwarderPicker() {
         if (persistentState.wgGlobalLockdown) {
-            showToastUiCentered(
-                this,
-                getString(R.string.lockdown_check_setting_disabled),
-                Toast.LENGTH_SHORT,
-            )
+            showToastUiCentered(this, getString(R.string.lockdown_check_setting_disabled), Toast.LENGTH_SHORT)
             return
         }
         val ep = endpoint ?: return
@@ -529,54 +359,62 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             val none = getString(R.string.settings_app_list_default_app)
             val names = listOf(none) + FirewallManager.getAllAppNamesSortedByVpnPermission(this)
             val current = forwarderAppName(ep) ?: none
-            uiCtx { showForwarderDialog(names, names.indexOf(current).coerceAtLeast(0)) }
+            uiCtx { state.forwarderChoices = names to names.indexOf(current).coerceAtLeast(0) }
         }
     }
 
-    private fun showForwarderDialog(names: List<String>, checked: Int) {
-        MaterialAlertDialogBuilder(this, R.style.App_Dialog_NoDim)
-            .setTitle(R.string.socks5_forwarder_title)
-            .setSingleChoiceItems(names.toTypedArray(), checked) { dialog, which ->
-                dialog.dismiss()
-                if (which != checked) onForwarderPicked(names[which], isNone = which == 0)
-            }
-            .setNegativeButton(R.string.lbl_cancel, null)
-            .show()
+    override fun dismissForwarderPicker() {
+        state.forwarderChoices = null
     }
 
-    private fun onForwarderPicked(appName: String, isNone: Boolean) {
+    override fun forwarderPicked(index: Int) {
+        val (names, checked) = state.forwarderChoices ?: return
+        state.forwarderChoices = null
+        if (index == checked) return
         val ep = endpoint ?: return
         io {
-            val pkg = if (isNone) "" else FirewallManager.getPackageNameByAppName(appName).orEmpty()
+            val pkg = if (index == 0) "" else FirewallManager.getPackageNameByAppName(names[index]).orEmpty()
             // only the forwarder changes; unsaved server edits stay in the form
             val updated = copyOf(ep, ep.proxyIP, ep.proxyPort, ep.userName, ep.password, pkg)
-            uiCtx { persist(updated, enable = false) }
+            uiCtx { persist(updated, enable = false, resetForm = false) }
             logEvent("Custom SOCKS5 forwarder set", "custom SOCKS5 forwarder app: $pkg")
         }
     }
 
-    private fun openAppsPicker() {
-        startActivity(
-            WgIncludeAppsActivity.newIntent(this, ID_S5_BASE, AppConfig.ProxyType.SOCKS5.name)
+    override fun setLoopback(on: Boolean) {
+        if (state.vpnLockdown) return
+        state.loopback = on
+        if (persistentState.excludeAppsInProxy == !on) return
+        persistentState.excludeAppsInProxy = !on
+        logEvent(
+            "loopback proxy forwarder apps SOCKS5 Proxy toggled",
+            "loopback proxy forwarder apps in SOCKS5 proxy: $on",
         )
     }
 
-    private fun openLogs() {
+    override fun openVpnSettings() {
+        UIUtils.openVpnProfile(this)
+    }
+
+    override fun openApps() {
+        startActivity(WgIncludeAppsActivity.newIntent(this, ID_S5_BASE, AppConfig.ProxyType.SOCKS5.name))
+    }
+
+    override fun openLogs() {
         // the rpn log view is a plain proxy-id filter over connection and dns logs
         val intent = Intent(this, NetworkLogsActivity::class.java)
         intent.putExtra(Constants.SEARCH_QUERY, RULES_SEARCH_ID_RPN + ID_S5_BASE)
         startActivity(intent)
     }
 
-    private fun showDiscardDialog() {
-        MaterialAlertDialogBuilder(this, R.style.App_Dialog_NoDim)
-            .setTitle(R.string.socks5_discard_title)
-            .setPositiveButton(R.string.socks5_discard) { _, _ ->
-                discardCallback.isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
-            }
-            .setNegativeButton(R.string.lbl_cancel, null)
-            .show()
+    override fun discard() {
+        state.discardDialog = false
+        discardCallback.isEnabled = false
+        onBackPressedDispatcher.onBackPressed()
+    }
+
+    override fun dismissDiscard() {
+        state.discardDialog = false
     }
 
     private fun startStatsPolling() {
@@ -595,18 +433,14 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
     }
 
     private suspend fun updateStatusUi() {
-        if (!appConfig.isCustomSocks5Enabled()) {
+        val enabled = appConfig.isCustomSocks5Enabled()
+        val vpnOn = VpnController.isOn()
+        if (!enabled || !vpnOn) {
             uiCtx {
-                b.statusCard.strokeWidth = 0
-                b.statusText.text =
-                    getString(R.string.lbl_disabled).replaceFirstChar(Char::titlecase)
-            }
-            return
-        }
-        if (!VpnController.isOn()) {
-            uiCtx {
-                b.statusCard.strokeWidth = 0
-                b.statusText.text = getString(R.string.settings_socks5_vpn_disabled_error)
+                state.header = state.header.copy(
+                    status = ProxyDetailLogic.status(enabled, vpnOn, null),
+                    statusText = if (!enabled) null else getString(R.string.proxy_page_status_vpn_off),
+                )
             }
             return
         }
@@ -615,19 +449,17 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
         val stats = VpnController.getProxyStats(ID_S5_BASE)
         val ps = UIUtils.ProxyStatus.entries.find { it.id == statusPair.first }
         val text = getStatusText(ps, stats, statusPair.second)
-        val color = getStrokeColorForStatus(ps, stats)
+        val now = System.currentTimeMillis()
+        val failing = ProxyDetailLogic.isFailing(now, stats?.since ?: 0L, stats?.lastOK ?: 0L, WG_UPTIME_THRESHOLD)
         uiCtx {
-            b.statusText.text = text
-            b.statusCard.strokeWidth = 2
-            b.statusCard.strokeColor = fetchColor(this, color)
+            state.header = state.header.copy(
+                status = ProxyDetailLogic.status(true, true, statusPair.first, failing),
+                statusText = text,
+            )
         }
     }
 
-    private fun getStatusText(
-        status: UIUtils.ProxyStatus?,
-        stats: RouterStats?,
-        errMsg: String?,
-    ): String {
+    private fun getStatusText(status: UIUtils.ProxyStatus?, stats: RouterStats?, errMsg: String?): String {
         if (status == null) {
             val txt =
                 if (!errMsg.isNullOrEmpty()) {
@@ -638,8 +470,7 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             return txt.replaceFirstChar(Char::titlecase)
         }
 
-        val baseText =
-            getString(UIUtils.getProxyStatusStringRes(status.id)).replaceFirstChar(Char::titlecase)
+        val baseText = getString(UIUtils.getProxyStatusStringRes(status.id)).replaceFirstChar(Char::titlecase)
         // firestack reports a socks5 lastOK of "now" on every read, so show the uptime instead
         val since = stats?.since ?: 0L
         val upMs = System.currentTimeMillis() - since
@@ -647,19 +478,6 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
 
         val uptime = DateUtils.formatElapsedTime(upMs / DateUtils.SECOND_IN_MILLIS)
         return getString(R.string.socks5_uptime, baseText, uptime)
-    }
-
-    private fun getStrokeColorForStatus(status: UIUtils.ProxyStatus?, stats: RouterStats?): Int {
-        val now = System.currentTimeMillis()
-        val lastOk = stats?.lastOK ?: 0L
-        val since = stats?.since ?: 0L
-        val isFailing = now - since > WG_UPTIME_THRESHOLD && lastOk == 0L
-        return when (status) {
-            UIUtils.ProxyStatus.TOK -> if (isFailing) R.attr.chipTextNeutral else R.attr.accentGood
-            // an idle socks5 (no app traffic yet) is not an error
-            UIUtils.ProxyStatus.TUP, UIUtils.ProxyStatus.TZZ, null -> R.attr.chipTextNeutral
-            else -> R.attr.chipTextNegative
-        }
     }
 
     private fun logEvent(msg: String, details: String) {
@@ -677,4 +495,12 @@ class Socks5ConfigActivity : BaseActivity(R.layout.activity_socks5_config) {
             }
         }
     }
+}
+
+/** Rule edits from a proxy page are logged like the rules page's. */
+internal fun logRule(eventLogger: EventLogger, kind: RuleKind, details: String) {
+    eventLogger.log(
+        EventType.FW_RULE_MODIFIED, Severity.LOW,
+        if (kind == RuleKind.DOMAIN) "Custom Domain" else "Custom IP", EventSource.UI, false, details,
+    )
 }

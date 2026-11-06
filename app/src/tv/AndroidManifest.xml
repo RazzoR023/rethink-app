@@ -149,6 +149,15 @@
             android:name=".ui.activity.ProxySettingsActivity"
             android:finishOnTaskLaunch="true" />
         <activity
+            android:name=".ui.activity.Socks5ConfigActivity"
+            android:finishOnTaskLaunch="true" />
+        <activity
+            android:name=".ui.activity.HttpProxyActivity"
+            android:finishOnTaskLaunch="true" />
+        <activity
+            android:name=".ui.activity.OrbotProxyActivity"
+            android:finishOnTaskLaunch="true" />
+        <activity
             android:name=".ui.activity.MiscSettingsActivity"
             android:finishOnTaskLaunch="true" />
         <activity
@@ -191,7 +200,7 @@
           rethink-tv: mirrored from full's manifest. The tv flavor
           compiles all of main (which owns full's java), so any
           reachable startActivity() for these activities — e.g.
-          OrbotBottomSheet → WgIncludeAppsActivity — must find them
+          OrbotProxyActivity → WgIncludeAppsActivity — must find them
           declared or it crashes with ActivityNotFoundException. The
           TV UX itself uses the Compose screens (WgIncludeAppsScreen /
           RpnBypassAppsScreen); these View-based activities are a

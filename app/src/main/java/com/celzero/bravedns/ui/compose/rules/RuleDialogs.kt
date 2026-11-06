@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -35,6 +37,8 @@ import com.celzero.bravedns.ui.compose.design.ChoiceOption
 import com.celzero.bravedns.ui.compose.design.RethinkSpacing
 import com.celzero.bravedns.ui.compose.design.SegmentOption
 import com.celzero.bravedns.ui.compose.design.SegmentedChoice
+import com.celzero.bravedns.ui.compose.design.SettingRow
+import com.celzero.bravedns.ui.compose.design.SettingTrailing
 import com.celzero.bravedns.ui.compose.design.SingleChoiceList
 
 /*
@@ -102,6 +106,7 @@ internal fun RuleEditorDialog(draft: RuleDraft, state: RulesScreenState, actions
         proxies = state.proxies,
         onChange = { f -> state.updateDraft(f) },
         onPickProxy = { state.picker = PickerTarget.Draft },
+        onPickApp = if (state.scopePickable && !draft.isEdit) ({ state.scopePicker = true }) else null,
         onSave = { actions.saveDraft() },
         onDismiss = { if (!draft.saving) state.dialog = null },
     )
@@ -117,6 +122,8 @@ internal fun RuleEditorDialogContent(
     onPickProxy: () -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
+    /** when set, "Applies to" is a row that opens an app / All apps chooser */
+    onPickApp: (() -> Unit)? = null,
 ) {
     val domain = draft.kind == RuleKind.DOMAIN
     val title = when {
@@ -133,11 +140,23 @@ internal fun RuleEditorDialogContent(
         title = { Text(stringResource(title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(RethinkSpacing.md)) {
-                Text(
-                    stringResource(R.string.rules_dialog_applies_to, appName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                if (onPickApp == null) {
+                    Text(
+                        stringResource(R.string.rules_dialog_applies_to, appName),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                } else {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                        SettingRow(
+                            title = stringResource(R.string.rules_dialog_applies_to_title),
+                            modifier = Modifier.testTag("rule_editor_scope"),
+                            supportingText = appName,
+                            icon = Icons.Filled.Apps,
+                            onClick = onPickApp,
+                        ) { SettingTrailing.Chevron() }
+                    }
+                }
                 Text(
                     stringResource(if (domain) R.string.cd_dialog_desc else R.string.ci_dialog_desc),
                     style = MaterialTheme.typography.bodySmall,

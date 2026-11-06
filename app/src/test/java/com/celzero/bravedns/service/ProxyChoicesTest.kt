@@ -36,6 +36,8 @@ class ProxyChoicesTest {
         var s5On: Boolean = false,
         var s5Endpoint: String? = null,
         var orbotOn: Boolean = false,
+        var httpOn: Boolean = false,
+        var httpUrl: String? = null,
         var vpnOn: Boolean = true,
         var statuses: Map<String, Int?> = emptyMap(),
     ) : ProxyChoices.Source {
@@ -44,6 +46,8 @@ class ProxyChoicesTest {
         override fun isSocks5Enabled() = s5On
         override suspend fun socks5Endpoint() = s5Endpoint
         override fun isOrbotEnabled() = orbotOn
+        override fun isHttpEnabled() = httpOn
+        override suspend fun httpEndpoint() = httpUrl
         override fun isVpnOn() = vpnOn
         override suspend fun backendStatus(proxyId: String): Int? { asked += proxyId; return statuses[proxyId] }
     }
@@ -91,16 +95,19 @@ class ProxyChoicesTest {
 
     // ---- list ---------------------------------------------------------------------------
 
-    @Test fun list_wireguardByIdThenSocks5ThenOrbot() = runBlocking {
+    @Test fun list_wireguardByIdThenSocks5ThenOrbotThenHttp() = runBlocking {
         val src = FakeSource(wgs = listOf(wg(3, "home", false), wg(1, "wg-one", true)), s5Endpoint = "10.0.2.2:1080")
         val ids = ProxyChoices(src).list().map { it.proxyId }
-        assertEquals(listOf("wg1", "wg3", ProxyManager.ID_S5_BASE, ProxyManager.ID_ORBOT_BASE), ids)
+        assertEquals(
+            listOf("wg1", "wg3", ProxyManager.ID_S5_BASE, ProxyManager.ID_ORBOT_BASE, ProxyManager.ID_HTTP_BASE),
+            ids,
+        )
     }
 
     @Test fun list_offProxiesAreListedAndMarked() = runBlocking {
         val src = FakeSource(wgs = listOf(wg(2, "off-wg", active = false)), s5On = false, orbotOn = false)
         val list = ProxyChoices(src).list()
-        assertEquals(3, list.size)
+        assertEquals(4, list.size)
         assertTrue(list.all { !it.enabled && it.health == Health.OFF })
         // off proxies are not asked for a status
         assertTrue(src.asked.isEmpty())
@@ -241,5 +248,31 @@ class ProxyChoicesTest {
         assertEquals(listOf("wg7"), extra.map { it.proxyId })
         assertEquals(Kind.OTHER, extra.single().kind)
         assertEquals(Health.OFF, extra.single().health)
+    }
+
+    // ---- http ---------------------------------------------------------------------------
+
+    @Test fun list_httpCarriesUrlAndLiveStatus() = runBlocking {
+        val src = FakeSource(httpOn = true, httpUrl = "http://127.0.0.1:8118", statuses = mapOf("HTTP" to Backend.TOK))
+        val http = ProxyChoices(src).list().single { it.kind == Kind.HTTP }
+        assertEquals(ProxyManager.ID_HTTP_BASE, http.proxyId)
+        assertEquals("http://127.0.0.1:8118", http.endpoint)
+        assertTrue(http.enabled)
+        assertEquals(Health.UP, http.health)
+    }
+
+    @Test fun list_httpOffIsNotAsked() = runBlocking {
+        val src = FakeSource(httpOn = false)
+        val http = ProxyChoices(src).list().single { it.kind == Kind.HTTP }
+        assertEquals(Health.OFF, http.health)
+        assertFalse("HTTP" in src.asked)
+    }
+
+    @Test fun forApps_dropsHttp_keepsTheRestInOrder() = runBlocking {
+        val src = FakeSource(wgs = listOf(wg(1, "a", true)), httpOn = true)
+        val all = ProxyChoices(src).list()
+        val apps = ProxyChoices.forApps(all)
+        assertEquals(all.map { it.proxyId } - ProxyManager.ID_HTTP_BASE, apps.map { it.proxyId })
+        assertTrue(apps.none { it.kind == Kind.HTTP })
     }
 }
