@@ -15,17 +15,8 @@
  */
 package com.celzero.bravedns.ui.bottomsheet
 
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
-import com.celzero.bravedns.ui.compose.RethinkTheme
-import com.celzero.bravedns.ui.compose.trafficlogs.*
-
-import com.celzero.bravedns.util.Logger
-import com.celzero.bravedns.util.Logger.LOG_TAG_FIREWALL
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
 import android.os.Bundle
 import android.text.Spanned
 import android.text.TextUtils
@@ -33,35 +24,42 @@ import android.text.format.DateUtils
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.Toast
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import com.celzero.bravedns.R
 import com.celzero.bravedns.database.ConnectionTracker
 import com.celzero.bravedns.database.EventSource
 import com.celzero.bravedns.database.EventType
 import com.celzero.bravedns.database.Severity
-import com.celzero.bravedns.service.DomainRulesManager
 import com.celzero.bravedns.service.EventLogger
 import com.celzero.bravedns.service.FirewallManager
 import com.celzero.bravedns.service.FirewallRuleset
 import com.celzero.bravedns.service.FirewallRuleset.Companion.getFirewallRule
-import com.celzero.bravedns.service.IpRulesManager
 import com.celzero.bravedns.service.PersistentState
 import com.celzero.bravedns.service.ProxyManager.isNotLocalAndRpnProxy
 import com.celzero.bravedns.service.VpnController
 import com.celzero.bravedns.ui.activity.AppInfoActivity
+import com.celzero.bravedns.ui.compose.RethinkTheme
+import com.celzero.bravedns.ui.compose.rules.RuleSheetActions
+import com.celzero.bravedns.ui.compose.rules.RuleSheetLogic
+import com.celzero.bravedns.ui.compose.rules.RuleSheetState
+import com.celzero.bravedns.ui.compose.trafficlogs.AppRuleDialog
+import com.celzero.bravedns.ui.compose.trafficlogs.ConnectionDetailsCallbacks
+import com.celzero.bravedns.ui.compose.trafficlogs.ConnectionDetailsScreen
+import com.celzero.bravedns.ui.compose.trafficlogs.ConnectionDetailsUi
+import com.celzero.bravedns.ui.compose.trafficlogs.LogInfoDialogState
 import com.celzero.bravedns.util.Constants
+import com.celzero.bravedns.util.Logger
+import com.celzero.bravedns.util.Logger.LOG_TAG_FIREWALL
 import com.celzero.bravedns.util.Protocol
 import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.UIUtils
-import com.celzero.bravedns.util.UIUtils.fetchColor
 import com.celzero.bravedns.util.UIUtils.htmlToSpannedText
 import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.getIcon
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
-import com.celzero.bravedns.ui.compose.wireguard.WgAlertDialogBuilder
 import com.google.common.collect.HashMultimap
 import com.google.common.collect.Multimap
 import com.google.gson.Gson
@@ -73,12 +71,20 @@ import org.koin.android.ext.android.inject
 import org.koin.core.component.KoinComponent
 import java.util.Locale
 
-class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
+/**
+ * Network logs -> a connection: its app, verdict, destination and the rules for it (the app's
+ * firewall rule; the app's IP and domain rules, each with "Route via"). UI in
+ * [ConnectionDetailsScreen]; IP / domain rules through [RuleSheetActions].
+ */
+class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent, ConnectionDetailsCallbacks {
 
-    private var presentation: ConnectionDetailsState? = null
-    private val b get() = checkNotNull(presentation) { "Presentation accessed outside of view lifecycle" }
+    private val persistentState by inject<PersistentState>()
+    private val eventLogger by inject<EventLogger>()
 
     private var info: ConnectionTracker? = null
+    private val ui = ConnectionDetailsUi()
+    private val rules = RuleSheetState()
+    private lateinit var ruleActions: RuleSheetActions
 
     companion object {
         const val INSTANCE_STATE_IPDETAILS = "IPDETAILS"
@@ -86,78 +92,58 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        presentation = ConnectionDetailsState(requireContext())
+        ruleActions = ruleSheetActions(rules, eventLogger, "IP / domain rule changed")
         return ComposeView(requireContext()).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent { RethinkTheme { ConnectionDetailsContent(b) } }
+            setContent { RethinkTheme { ConnectionDetailsScreen(ui, rules, ruleActions, this@ConnTrackerBottomSheet) } }
         }
     }
 
-    override fun onDestroyView() {
-        super.onDestroyView()
-        presentation = null
+    override fun getTheme(): Int = Themes.getBottomSheetCurrentTheme(isDarkThemeOn(), persistentState.theme)
+
+    override fun onStart() {
+        super.onStart()
+        transparentSheetFrame()
     }
-
-    override fun getTheme(): Int =
-        Themes.getBottomSheetCurrentTheme(isDarkThemeOn(), persistentState.theme)
-
-    private val persistentState by inject<PersistentState>()
-    private val eventLogger by inject<EventLogger>()
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        dialog?.window?.let { window ->
-            Themes.applyBottomSheetSystemBarAppearance(window, isDarkThemeOn(), persistentState.theme)
-        }
-
-        val data = arguments?.getString(INSTANCE_STATE_IPDETAILS)
-        info = Gson().fromJson(data, ConnectionTracker::class.java)
+        dialog?.window?.let { Themes.applyBottomSheetSystemBarAppearance(it, isDarkThemeOn(), persistentState.theme) }
+        info = Gson().fromJson(arguments?.getString(INSTANCE_STATE_IPDETAILS), ConnectionTracker::class.java)
         initView()
     }
 
-    private fun isDarkThemeOn(): Boolean {
-        return resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
-    }
+    private fun isDarkThemeOn(): Boolean =
+        resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
 
     private fun initView() {
-        if (info == null) {
+        val ci = info
+        if (ci == null) {
             Logger.w(LOG_TAG_FIREWALL, "ip-details missing: initView called before onViewCreated?")
-            this.dismiss()
+            dismiss()
             return
         }
-
-        b.bsConnConnectionTypeHeading.text = info?.ipAddress.orEmpty()
-        b.bsConnConnectionFlag.text = info?.flag.orEmpty()
-
-        // updates the application name and other details
-        updateAppDetails()
-        // updates the connection detail chip
-        updateConnDetailsChip()
-        // updates the blocked rules chip
-        updateBlockedRulesChip()
-        // assigns color for the blocked rules chip
-        lightenUpChip()
-        // updates the summary details
-        displaySummaryDetails()
-        // setup click and item selected listeners
-        setupClickListeners()
-        // updates the ip rules button
-        info?.let { updateIpRulesUi(it.uid, it.ipAddress) }
-        // updates the value from dns request cache if available
-        updateDnsIfAvailable()
+        ui.ip = ci.ipAddress
+        ui.flag = ci.flag
+        ui.appName = ci.appName
+        ui.domainLine = ci.dnsQuery?.takeIf { it.isNotEmpty() } ?: UIUtils.getCountryNameFromFlag(ci.flag)
+        updateAppDetails(ci)
+        ui.summary = summaryLine(ci)
+        updateVerdict(ci)
+        displaySummaryDetails(ci)
+        // the app's ip rule and, with a dns query, its domain rule; each with "Route via"
+        if (rules.rows.isEmpty()) ruleActions.load(RuleSheetLogic.connectionRows(ci.uid, ci.ipAddress, ci.dnsQuery))
     }
 
     override fun onResume() {
         super.onResume()
-        if (info == null) {
+        val uid = info?.uid
+        if (uid == null) {
             Logger.w(LOG_TAG_FIREWALL, "ip-details missing: initView called before onViewCreated?")
-            this.dismiss()
+            dismiss()
             return
         }
-        // updates the app firewall's button
-        val uid = info?.uid ?: return
+        // the app rule may have changed elsewhere (e.g. app details)
         io {
             val appStatus = FirewallManager.appStatus(uid)
             val connStatus = FirewallManager.connectionStatus(uid)
@@ -165,80 +151,36 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
         }
     }
 
-    private fun updateDnsIfAvailable() {
-        val domain = info?.dnsQuery
-        val uid = info?.uid
-        val flag = info?.flag
-
-        if (domain.isNullOrEmpty() || uid == null) {
-            b.bsConnDnsCacheText.visibility = View.VISIBLE
-            b.bsConnDnsCacheText.text = UIUtils.getCountryNameFromFlag(flag)
-            b.bsConnRuleRowDomain.visibility = View.GONE
-            return
-        }
-
-        val status = DomainRulesManager.getDomainRule(domain, uid)
-        // the row defaults to gone; only reveal it when a domain rule applies
-        b.bsConnRuleRowDomain.visibility = View.VISIBLE
-        b.bsConnDomainRuleAddress.text = domain
-        renderDomainRuleState(status)
-        b.bsConnDnsCacheText.visibility = View.VISIBLE
-        b.bsConnDnsCacheText.text = domain
+    private fun summaryLine(ci: ConnectionTracker): String {
+        val protocol = Protocol.getProtocolName(ci.protocol).name
+        val time = DateUtils.getRelativeTimeSpanString(ci.timeStamp, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE)
+        val protocolDetails = "$protocol/${ci.port}"
+        return if (ci.isBlocked) getString(R.string.bsct_conn_desc_blocked, protocolDetails, time)
+        else getString(R.string.bsct_conn_desc_allowed, protocolDetails, time)
     }
 
-    private fun updateConnDetailsChip() {
-        val currentInfo = info
-        if (currentInfo == null) {
-            Logger.w(LOG_TAG_FIREWALL, "ip-details missing: not updating the chip details")
-            return
-        }
-
-        val protocol = Protocol.getProtocolName(currentInfo.protocol).name
-        val time =
-            DateUtils.getRelativeTimeSpanString(
-                currentInfo.timeStamp,
-                System.currentTimeMillis(),
-                DateUtils.MINUTE_IN_MILLIS,
-                DateUtils.FORMAT_ABBREV_RELATIVE
-            )
-        val protocolDetails = "$protocol/${currentInfo.port}"
-        if (currentInfo.isBlocked) {
-            b.bsConnTrackPortDetailChip.text =
-                getString(R.string.bsct_conn_desc_blocked, protocolDetails, time)
-            return
-        }
-
-        b.bsConnTrackPortDetailChip.text =
-            getString(R.string.bsct_conn_desc_allowed, protocolDetails, time)
+    private fun updateVerdict(ci: ConnectionTracker) {
+        ui.verdict = verdictText(ci).orEmpty()
+        ui.verdictNegative = ci.isBlocked || isInvalidProxyDetails()
+        ui.verdictIcon = FirewallRuleset.getRulesIcon(ci.blockedByRule)
     }
 
-    private fun updateBlockedRulesChip() {
-        if (info?.blockedByRule.isNullOrBlank()) {
-            b.bsConnTrackAppInfoTxt.text = getString(R.string.firewall_rule_no_rule)
-            return
-        }
-
-        val rule = info?.blockedByRule ?: return
-        val isIpnProxy = isNotLocalAndRpnProxy(info?.proxyDetails.orEmpty())
+    private fun verdictText(ci: ConnectionTracker): String? {
+        val rule = ci.blockedByRule
+        if (rule.isBlank()) return getString(R.string.firewall_rule_no_rule)
+        val isIpnProxy = isNotLocalAndRpnProxy(ci.proxyDetails)
         // TODO: below code is not required, remove it in future (20/03/2023)
-        if (rule.contains(FirewallRuleset.RULE2G.id)) {
-            b.bsConnTrackAppInfoTxt.text =
-                getFirewallRule(FirewallRuleset.RULE2G.id)?.title?.let { getString(it) }
-            return
-        } else if (!info?.proxyDetails.isNullOrEmpty() && isIpnProxy) {
-            // add the proxy id to the chip text if available
-            b.bsConnTrackAppInfoTxt.text = getString(R.string.two_argument_colon, getString(FirewallRuleset.RULE12.title), info?.proxyDetails)
+        return if (rule.contains(FirewallRuleset.RULE2G.id)) {
+            getFirewallRule(FirewallRuleset.RULE2G.id)?.title?.let { getString(it) }
+        } else if (ci.proxyDetails.isNotEmpty() && isIpnProxy) {
+            // add the proxy id to the verdict if available
+            getString(R.string.two_argument_colon, getString(FirewallRuleset.RULE12.title), ci.proxyDetails)
+        } else if (isInvalidProxyDetails()) {
+            getString(getFirewallRule(FirewallRuleset.RULE18.id)?.title ?: R.string.firewall_rule_no_rule)
         } else {
-            if (isInvalidProxyDetails()) {
-                b.bsConnTrackAppInfoTxt.text = getString(getFirewallRule(FirewallRuleset.RULE18.id)?.title ?: R.string.firewall_rule_no_rule)
-            } else {
-                val allowReason =
-                    if (info?.isBlocked == false) FirewallRuleset.getAllowReason(rule) else null
-                b.bsConnTrackAppInfoTxt.text =
-                    allowReason?.title?.let {
-                        getString(R.string.bsct_allow_reason, getString(it))
-                    } ?: getFirewallRule(rule)?.title?.let { getString(it) }
-            }
+            val allowReason = if (!ci.isBlocked) FirewallRuleset.getAllowReason(rule) else null
+            allowReason?.title?.let { getString(R.string.bsct_allow_reason, getString(it)) }
+                ?: getFirewallRule(rule)?.title?.let { getString(it) }
         }
     }
 
@@ -246,563 +188,247 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
         val isIpnProxy = isNotLocalAndRpnProxy(info?.proxyDetails.orEmpty())
         val rule = info?.blockedByRule ?: return false
         val isRuleAddedAsProxy = getFirewallRule(rule)?.id == FirewallRuleset.RULE12.id
-        if (isRuleAddedAsProxy && (info?.proxyDetails.isNullOrEmpty() || !isIpnProxy)) {
-            // when the conn is marked as proxied with id from flow, but the returned summary
-            // doesn't have the proxy details. change the rule from proxied to error (RULE1C)
-            return true
-        }
-        return false
+        // when the conn is marked as proxied with id from flow, but the returned summary
+        // doesn't have the proxy details. change the rule from proxied to error (RULE1C)
+        return isRuleAddedAsProxy && (info?.proxyDetails.isNullOrEmpty() || !isIpnProxy)
     }
 
-    private fun updateAppDetails() {
-        val currentInfo = info ?: return
-
+    private fun updateAppDetails(ci: ConnectionTracker) {
+        val context = requireContext().applicationContext
         io {
-            val appNames = FirewallManager.getAppNamesByUid(currentInfo.uid)
-            if (appNames.isEmpty()) {
-                uiCtx { handleNonApp() }
-                return@io
-            }
-            val pkgName = FirewallManager.getPackageNameByAppName(appNames[0])
-
-            val appCount = appNames.count()
+            val appNames = FirewallManager.getAppNamesByUid(ci.uid)
+            val pkgName = appNames.firstOrNull()?.let { FirewallManager.getPackageNameByAppName(it) }
+            val icon = pkgName?.let { getIcon(context, it, ci.appName) }
             uiCtx {
-                if (appCount >= 1) {
-                    b.bsConnBlockedRule2HeaderLl.visibility = View.GONE
-                    val appName =  if (appCount >= 2) {
-                        getString(
-                            R.string.ctbs_app_other_apps,
-                            appNames[0],
-                            appCount.minus(1).toString()
-                        )
-                    } else {
-                        appNames[0]
-                    }
-                    // the hero header's trailing arrow icon conveys tappability,
-                    // so the name itself carries no arrow suffix
-                    b.bsConnTrackAppName.text = appName
-                    if (pkgName == null) return@uiCtx
-                    b.bsConnTrackAppIcon.setImageDrawable(
-                        getIcon(requireContext(), pkgName, info?.appName)
-                    )
-                    b.bsConnAppRuleHeading.text = appName.take(20)
-                } else {
+                if (appNames.isEmpty()) {
                     // apps which are not available in cache are treated as non app.
-                    // TODO: check packageManager#getApplicationInfo() for appInfo
                     handleNonApp()
+                    return@uiCtx
                 }
+                val appName = if (appNames.size >= 2) {
+                    getString(R.string.ctbs_app_other_apps, appNames[0], (appNames.size - 1).toString())
+                } else appNames[0]
+                ui.isApp = true
+                ui.appName = appName
+                ui.appRuleTitle = appName
+                if (icon != null) ui.appIcon = icon
             }
         }
-    }
-
-    private fun displaySummaryDetails() {
-        b.bsConnConnTypeSecondary.visibility = View.GONE
-        // show connId and message if the log level is less than DEBUG
-        if (Logger.LoggerLevel.fromId(persistentState.goLoggerLevel.toInt())
-                ?.isLessThanOrEqualTo(Logger.LoggerLevel.DEBUG) == true
-        ) {
-            b.connectionMessage.text = "${info?.proxyDetails}; ${info?.rpid}; ${info?.connId}; ${info?.message}; ${info?.synack}"
-        } else {
-            b.connectionMessage.text = info?.message
-        }
-
-        io {
-            val currentInfo = info
-            val hasCid = currentInfo != null && VpnController.hasCid(currentInfo.connId, currentInfo.uid)
-            uiCtx {
-                if (hasCid) {
-                    b.bsConnConnDuration.text =
-                        getString(
-                            R.string.two_argument_space,
-                            getString(R.string.lbl_active),
-                            getString(R.string.symbol_green_circle)
-                        )
-                } else {
-                    val duration = UIUtils.getDurationInHumanReadableFormat(requireContext(), info?.duration ?: 0)
-                    if (duration.isEmpty()) {
-                        b.bsConnConnDuration.text =
-                            getString(
-                                R.string.two_argument_space,
-                                getString(R.string.symbol_hyphen),
-                                getString(R.string.symbol_clock)
-                            )
-                    } else {
-                        b.bsConnConnDuration.text =
-                            getString(
-                                R.string.two_argument_space,
-                                duration,
-                                getString(R.string.symbol_clock)
-                            )
-                    }
-                }
-            }
-        }
-
-        val connType = ConnectionTracker.ConnType.get(info?.connType)
-        if (connType.isMetered()) {
-            b.bsConnConnType.text =
-                getString(
-                    R.string.two_argument_space,
-                    getString(R.string.ada_app_metered),
-                    getString(R.string.symbol_currency)
-                )
-        } else {
-            b.bsConnConnType.text =
-                getString(
-                    R.string.two_argument_space,
-                    getString(R.string.ada_app_unmetered),
-                    getString(R.string.symbol_global)
-                )
-        }
-
-        if (
-            info?.message?.isEmpty() == true &&
-                info?.duration == 0 &&
-                info?.downloadBytes == 0L &&
-                info?.uploadBytes == 0L
-        ) {
-            b.bsConnSummaryDetailLl.visibility = View.GONE
-            b.bsConnConnTypeSecondary.visibility = View.VISIBLE
-            b.bsConnConnTypeSecondary.text = b.bsConnConnType.text
-            return
-        }
-
-        // keep the technical details section collapsed; content is populated
-        // and revealed via the section header toggle
-        val downloadBytes =
-            getString(
-                R.string.symbol_download,
-                Utilities.humanReadableByteCount(info?.downloadBytes ?: 0L, true)
-            )
-        val uploadBytes =
-            getString(
-                R.string.symbol_upload,
-                Utilities.humanReadableByteCount(info?.uploadBytes ?: 0L, true)
-            )
-
-        b.bsConnConnUpload.text = uploadBytes
-        b.bsConnConnDownload.text = downloadBytes
-    }
-
-    private fun lightenUpChip() {
-        // the verdict reason row flips its text + icon color with the verdict
-        val colorAttr =
-            if (info?.isBlocked == true || isInvalidProxyDetails()) R.attr.chipTextNegative
-            else R.attr.chipTextPositive
-        val color = fetchColor(requireContext(), colorAttr)
-        b.bsConnTrackAppInfoTxt.setTextColor(color)
-        b.bsConnTrackAppInfoIcon.setImageDrawable(
-            ContextCompat.getDrawable(
-                requireContext(),
-                FirewallRuleset.getRulesIcon(info?.blockedByRule)
-            )
-        )
-        b.bsConnTrackAppInfoIcon.colorFilter =
-            PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
     }
 
     private fun handleNonApp() {
-        // show universal setting layout
-        b.bsConnBlockedRule2HeaderLl.visibility = View.VISIBLE
-        // unknown uids have no meaningful app rule; hide that row only
-        b.bsConnRuleRowApp.visibility = View.GONE
-        b.bsConnUnknownAppCheck.isChecked = persistentState.getBlockUnknownConnections()
-        b.bsConnTrackAppName.text = info?.appName.orEmpty()
+        // unknown uids have no meaningful app rule; show the universal "block unknown" switch
+        ui.isApp = false
+        ui.blockUnknown = persistentState.getBlockUnknownConnections()
+        ui.appName = info?.appName.orEmpty()
     }
 
-    private fun setupClickListeners() {
-        b.bsConnUnknownAppCheck.setOnCheckedChangeListener(null)
-        b.bsConnUnknownAppCheck.setOnClickListener {
-            Logger.d(
-                LOG_TAG_FIREWALL,
-                "Unknown app, universal firewall settings(block unknown app): ${b.bsConnUnknownAppCheck.isChecked} "
-            )
-            persistentState.setBlockUnknownConnections(b.bsConnUnknownAppCheck.isChecked)
-            logEvent("Universal firewall setting changed", "Block unknown apps: ${b.bsConnUnknownAppCheck.isChecked}")
+    private fun displaySummaryDetails(ci: ConnectionTracker) {
+        // show connId and message if the log level is less than DEBUG
+        val debug = Logger.LoggerLevel.fromId(persistentState.goLoggerLevel.toInt())?.isLessThanOrEqualTo(Logger.LoggerLevel.DEBUG) == true
+        ui.message = if (debug) "${ci.proxyDetails}; ${ci.rpid}; ${ci.connId}; ${ci.message}; ${ci.synack}" else ci.message
+        val connType = if (ConnectionTracker.ConnType.get(ci.connType).isMetered()) {
+            getString(R.string.two_argument_space, getString(R.string.ada_app_metered), getString(R.string.symbol_currency))
+        } else {
+            getString(R.string.two_argument_space, getString(R.string.ada_app_unmetered), getString(R.string.symbol_global))
         }
-
-        b.bsConnTrackAppInfo.setOnClickListener { showFirewallRulesDialog(info?.blockedByRule) }
-
-        b.bsConnTrackAppNameHeader.setOnClickListener {
-            val uid = info?.uid ?: return@setOnClickListener
-            io {
-                val ai = FirewallManager.getAppInfoByUid(uid)
-                uiCtx {
-                    // case: app is uninstalled but still available in RethinkDNS database
-                    if (ai == null || uid == Constants.INVALID_UID) {
-                        showToastUiCentered(
-                            requireContext(),
-                            getString(R.string.ct_bs_app_info_error),
-                            Toast.LENGTH_SHORT
-                        )
-                        return@uiCtx
-                    }
-                    openAppDetailActivity(uid)
+        if (ci.message.isEmpty() && ci.duration == 0 && ci.downloadBytes == 0L && ci.uploadBytes == 0L) {
+            ui.meta = listOf(connType)
+            return
+        }
+        val download = getString(R.string.symbol_download, Utilities.humanReadableByteCount(ci.downloadBytes, true))
+        val upload = getString(R.string.symbol_upload, Utilities.humanReadableByteCount(ci.uploadBytes, true))
+        ui.meta = listOf(upload, download, connType)
+        io {
+            val hasCid = VpnController.hasCid(ci.connId, ci.uid)
+            uiCtx {
+                val duration = if (hasCid) {
+                    getString(R.string.two_argument_space, getString(R.string.lbl_active), getString(R.string.symbol_green_circle))
+                } else {
+                    val d = UIUtils.getDurationInHumanReadableFormat(requireContext(), ci.duration)
+                    getString(R.string.two_argument_space, d.ifEmpty { getString(R.string.symbol_hyphen) }, getString(R.string.symbol_clock))
                 }
+                ui.meta = listOf(duration, upload, download, connType)
             }
         }
+    }
 
-        // one rules card, one row per scope. the ip and domain rows cycle
-        // their rule state in place (no rule → block → trust → no rule);
-        // the app row keeps its full single-choice dialog since it has
-        // more states than a 3-way cycle can express
-        b.bsConnRuleRowApp.setOnClickListener { showAppRuleOptionsDialog() }
-        b.bsConnRuleRowIp.setOnClickListener { cycleIpRule() }
-        b.bsConnRuleRowDomain.setOnClickListener { cycleDomainRule() }
+    // ---- callbacks ----
+
+    override fun openApp() {
+        val uid = info?.uid ?: return
+        io {
+            val ai = FirewallManager.getAppInfoByUid(uid)
+            uiCtx {
+                // case: app is uninstalled but still available in RethinkDNS database
+                if (ai == null || uid == Constants.INVALID_UID) {
+                    showToastUiCentered(requireContext(), getString(R.string.ct_bs_app_info_error), Toast.LENGTH_SHORT)
+                    return@uiCtx
+                }
+                val context = requireContext()
+                dismiss()
+                val intent = Intent(context, AppInfoActivity::class.java)
+                intent.putExtra(AppInfoActivity.INTENT_UID, uid)
+                context.startActivity(intent)
+            }
+        }
+    }
+
+    override fun showVerdictInfo() = showFirewallRulesDialog(info?.blockedByRule)
+
+    override fun setBlockUnknown(block: Boolean) {
+        Logger.d(LOG_TAG_FIREWALL, "Unknown app, universal firewall settings(block unknown app): $block")
+        ui.blockUnknown = block
+        persistentState.setBlockUnknownConnections(block)
+        logEvent("Universal firewall setting changed", "Block unknown apps: $block")
+    }
+
+    /** Full app-rule option list (the historical spinner order) as a single-choice dialog. */
+    override fun openAppRules() {
+        val uid = info?.uid ?: return
+        val labels = FirewallManager.getLabel(requireContext()).toList()
+        val fallback = getString(R.string.lbl_app_rules)
+        io {
+            val a = FirewallManager.appStatus(uid)
+            val c = FirewallManager.connectionStatus(uid)
+            // title the dialog with the app the rules apply to, falling back to the generic label
+            val title = FirewallManager.getAppNamesByUid(uid).firstOrNull()
+                ?: info?.appName?.takeIf { it.isNotBlank() }
+                ?: fallback
+            uiCtx { ui.appRuleDialog = AppRuleDialog(title, labels, appRuleLabelIndex(a, c)) }
+        }
+    }
+
+    override fun selectAppRule(index: Int) {
+        onAppRuleSelected(
+            FirewallManager.FirewallStatus.getStatusByLabel(index),
+            FirewallManager.ConnectionStatus.getStatusByLabel(index),
+        )
     }
 
     /**
-     * Validates and applies an app-level firewall rule chosen from either the
-     * segmented control or the more-options dialog. Skips when the requested
-     * state already matches the persisted state; blocks exclude in VPN lockdown
-     * and for unknown packages (spinner-selection previously reverted with a
-     * toast, which is preserved here by re-rendering the persisted state).
+     * Validates and applies an app-level firewall rule. Skips when the requested state already
+     * matches the persisted state; refuses exclude in VPN lockdown and for unknown packages
+     * (re-rendering the persisted state, with a toast).
      */
-    private fun onAppRuleSelected(
-        fStatus: FirewallManager.FirewallStatus,
-        connStatus: FirewallManager.ConnectionStatus
-    ) {
+    private fun onAppRuleSelected(fStatus: FirewallManager.FirewallStatus, connStatus: FirewallManager.ConnectionStatus) {
         val uid = info?.uid ?: return
         io {
             val a = FirewallManager.appStatus(uid)
             val c = FirewallManager.connectionStatus(uid)
-
             // no change, prev state and current state are same
             if (a == fStatus && c == connStatus) return@io
-
             if (VpnController.isVpnLockdown() && fStatus.isExclude()) {
                 uiCtx {
-                    // re-render the persisted state
                     updateFirewallRulesUi(a, c)
-                    showToastUiCentered(
-                        requireContext(),
-                        getString(R.string.hsf_exclude_error),
-                        Toast.LENGTH_LONG
-                    )
+                    showToastUiCentered(requireContext(), getString(R.string.hsf_exclude_error), Toast.LENGTH_LONG)
                 }
                 return@io
             }
-
             // exclude needs a known package to be meaningful
             if (FirewallManager.isUnknownPackage(uid) && fStatus.isExclude()) {
                 uiCtx {
-                    // re-render the persisted state
                     updateFirewallRulesUi(a, c)
-                    showToastUiCentered(
-                        requireContext(),
-                        requireContext().getString(R.string.exclude_no_package_err_toast),
-                        Toast.LENGTH_LONG
-                    )
+                    showToastUiCentered(requireContext(), getString(R.string.exclude_no_package_err_toast), Toast.LENGTH_LONG)
                 }
                 return@io
             }
-
-            Logger.i(
-                LOG_TAG_FIREWALL,
-                "Change in firewall rule for app uid: $uid, firewall status: $fStatus, conn status: $connStatus"
-            )
+            Logger.i(LOG_TAG_FIREWALL, "Change in firewall rule for app uid: $uid, firewall status: $fStatus, conn status: $connStatus")
             applyFirewallRule(fStatus, connStatus)
         }
     }
 
     /**
-     * Full app-rule option list (mirrors the historical spinner order) as a
-     * single-choice dialog; used for states that do not fit the three visible
-     * segments.
+     * Index into [FirewallManager.getLabel] for the given state; keeps the historical spinner
+     * ordering (allow, block, block-unmetered, block-metered, isolate, bypass dns+firewall,
+     * bypass universal, exclude).
      */
-    private fun showAppRuleOptionsDialog() {
-        val uid = info?.uid ?: return
-        val labels = FirewallManager.getLabel(requireContext())
-        io {
-            val a = FirewallManager.appStatus(uid)
-            val c = FirewallManager.connectionStatus(uid)
-            uiCtx {
-                // title the dialog with the app the rules apply to, falling
-                // back to the generic label when the uid has no known name
-                val title =
-                    FirewallManager.getAppNamesByUid(uid).firstOrNull()
-                        ?: info?.appName?.takeIf { it.isNotBlank() }
-                        ?: getString(R.string.lbl_app_rules)
-                val dialog =
-                    WgAlertDialogBuilder(requireContext(), R.style.App_Dialog_NoDim)
-                        .setTitle(title)
-                        .setSingleChoiceItems(labels, appRuleLabelIndex(a, c)) { d, which ->
-                            d.dismiss()
-                            val fStatus =
-                                FirewallManager.FirewallStatus.getStatusByLabel(which)
-                            val cStatus =
-                                FirewallManager.ConnectionStatus.getStatusByLabel(which)
-                            onAppRuleSelected(fStatus, cStatus)
-                        }
-                        .create()
-                dialog.show()
-                // keep the dialog within the app's max width on expanded windows
-                UIUtils.capDialogWidth(dialog)
-            }
-        }
-    }
-
-    /**
-     * Index into [FirewallManager.getLabel] for the given state; keeps the
-     * historical spinner ordering (allow, block, block-unmetered, block-metered,
-     * isolate, bypass dns+firewall, bypass universal, exclude).
-     */
-    private fun appRuleLabelIndex(
-        fStatus: FirewallManager.FirewallStatus,
-        connStatus: FirewallManager.ConnectionStatus
-    ): Int {
-        return when (fStatus) {
-            FirewallManager.FirewallStatus.NONE -> {
-                when (connStatus) {
-                    FirewallManager.ConnectionStatus.ALLOW -> 0
-                    FirewallManager.ConnectionStatus.BOTH -> 1
-                    FirewallManager.ConnectionStatus.UNMETERED -> 2
-                    FirewallManager.ConnectionStatus.METERED -> 3
-                }
+    private fun appRuleLabelIndex(fStatus: FirewallManager.FirewallStatus, connStatus: FirewallManager.ConnectionStatus): Int =
+        when (fStatus) {
+            FirewallManager.FirewallStatus.NONE -> when (connStatus) {
+                FirewallManager.ConnectionStatus.ALLOW -> 0
+                FirewallManager.ConnectionStatus.BOTH -> 1
+                FirewallManager.ConnectionStatus.UNMETERED -> 2
+                FirewallManager.ConnectionStatus.METERED -> 3
             }
             FirewallManager.FirewallStatus.ISOLATE -> 4
             FirewallManager.FirewallStatus.BYPASS_DNS_FIREWALL -> 5
             FirewallManager.FirewallStatus.BYPASS_UNIVERSAL -> 6
             FirewallManager.FirewallStatus.EXCLUDE -> 7
         }
-    }
 
-    private fun updateFirewallRulesUi(
-        firewallStatus: FirewallManager.FirewallStatus,
-        connStatus: FirewallManager.ConnectionStatus
-    ) {
-        // the app row's trailing edge shows the applied status, no frills
-        renderRuleState(b.bsConnAppRuleState, firewallStatusText(firewallStatus, connStatus))
-    }
-
-    /**
-     * Trailing state label of a rule row. The app row stays neutral-colored;
-     * the ip/domain rows pass a color attr so the verdict is visible at a
-     * glance (light for no-rule, negative for block, positive for trust).
-     */
-    private fun renderRuleState(view: LogControlState, text: String, colorAttr: Int = R.attr.primaryLightColorText) {
-        view.text = text
-        view.setTextColor(fetchColor(requireContext(), colorAttr))
-    }
-
-    /** Switch glyph for an ip rule; bypass-universal is surfaced read-only. */
-    private fun ipRuleSwitchState(rule: IpRulesManager.IpRuleStatus): LogRuleGlyph {
-        return when (rule) {
-            IpRulesManager.IpRuleStatus.BLOCK -> LogRuleGlyph.OFF
-            IpRulesManager.IpRuleStatus.TRUST -> LogRuleGlyph.ON
-            else -> LogRuleGlyph.NEUTRAL
-        }
-    }
-
-    private fun updateIpRulesUi(uid: Int, ipAddress: String) {
-        io {
-            val rule = IpRulesManager.getMostSpecificRuleMatch(uid, ipAddress)
-            uiCtx {
-                b.bsConnIpRuleAddress.text = ipAddress
-                val (text, colorAttr) =
-                    when (rule) {
-                        IpRulesManager.IpRuleStatus.NONE ->
-                            Pair(getString(R.string.ci_no_rule), R.attr.primaryLightColorText)
-                        IpRulesManager.IpRuleStatus.BLOCK ->
-                            Pair(getString(R.string.ci_block), R.attr.chipTextNegative)
-                        IpRulesManager.IpRuleStatus.TRUST ->
-                            Pair(getString(R.string.ci_trust_rule), R.attr.chipTextPositive)
-                        // managed from the ip rules screen; surfaced read-only here
-                        IpRulesManager.IpRuleStatus.BYPASS_UNIVERSAL ->
-                            Pair(getString(R.string.ci_bypass_universal), R.attr.primaryLightColorText)
-                    }
-                renderRuleState(b.bsConnIpRuleState, text, colorAttr)
-                b.bsConnIpRuleSwitch.setRuleState(ipRuleSwitchState(rule))
-            }
-        }
+    private fun updateFirewallRulesUi(firewallStatus: FirewallManager.FirewallStatus, connStatus: FirewallManager.ConnectionStatus) {
+        ui.appRuleState = firewallStatusText(firewallStatus, connStatus)
     }
 
     /** Same status mapping as AppInfoActivity#getFirewallText. */
-    private fun firewallStatusText(
-        aStat: FirewallManager.FirewallStatus,
-        cStat: FirewallManager.ConnectionStatus
-    ): String {
-        return when (aStat) {
-            FirewallManager.FirewallStatus.NONE -> {
-                when {
-                    cStat.mobileData() -> getString(R.string.ada_app_status_block_md)
-                    cStat.wifi() -> getString(R.string.ada_app_status_block_wifi)
-                    cStat.allow() -> getString(R.string.ada_app_status_allow)
-                    cStat.blocked() -> getString(R.string.ada_app_status_block)
-                    else -> getString(R.string.ada_app_status_unknown)
-                }
+    private fun firewallStatusText(aStat: FirewallManager.FirewallStatus, cStat: FirewallManager.ConnectionStatus): String =
+        when (aStat) {
+            FirewallManager.FirewallStatus.NONE -> when {
+                cStat.mobileData() -> getString(R.string.ada_app_status_block_md)
+                cStat.wifi() -> getString(R.string.ada_app_status_block_wifi)
+                cStat.allow() -> getString(R.string.ada_app_status_allow)
+                cStat.blocked() -> getString(R.string.ada_app_status_block)
+                else -> getString(R.string.ada_app_status_unknown)
             }
             FirewallManager.FirewallStatus.EXCLUDE -> getString(R.string.ada_app_status_exclude)
-            FirewallManager.FirewallStatus.BYPASS_UNIVERSAL ->
-                getString(R.string.ada_app_status_whitelist)
+            FirewallManager.FirewallStatus.BYPASS_UNIVERSAL -> getString(R.string.ada_app_status_whitelist)
             FirewallManager.FirewallStatus.ISOLATE -> getString(R.string.ada_app_status_isolate)
-            FirewallManager.FirewallStatus.BYPASS_DNS_FIREWALL ->
-                getString(R.string.ada_app_status_bypass_dns_firewall)
+            FirewallManager.FirewallStatus.BYPASS_DNS_FIREWALL -> getString(R.string.ada_app_status_bypass_dns_firewall)
         }
-    }
-
-    private fun openAppDetailActivity(uid: Int) {
-        this.dismiss()
-        val intent = Intent(requireContext(), AppInfoActivity::class.java)
-        intent.putExtra(AppInfoActivity.INTENT_UID, uid)
-        requireContext().startActivity(intent)
-    }
-
-    /**
-     * Tap-to-cycle for the ip rule scope: no rule → block → trust → no rule.
-     * Bypass-universal is managed from the ip rules screen, so it is left
-     * untouched rather than overwritten by the cycle.
-     */
-    private fun cycleIpRule() {
-        val currentInfo = info ?: return
-        // gate the row for the duration of the pending read-modify-write so a
-        // second tap cannot read a stale rule; every exit path re-enables it
-        // via the finally below (including the bypass-universal early return)
-        b.bsConnRuleRowIp.isEnabled = false
-        io {
-            try {
-                val current =
-                    IpRulesManager.getMostSpecificRuleMatch(currentInfo.uid, currentInfo.ipAddress)
-                val next =
-                    when (current) {
-                        IpRulesManager.IpRuleStatus.NONE -> IpRulesManager.IpRuleStatus.BLOCK
-                        IpRulesManager.IpRuleStatus.BLOCK -> IpRulesManager.IpRuleStatus.TRUST
-                        IpRulesManager.IpRuleStatus.TRUST -> IpRulesManager.IpRuleStatus.NONE
-                        // read-only here; cycling would silently drop the bypass rule
-                        IpRulesManager.IpRuleStatus.BYPASS_UNIVERSAL -> return@io
-                    }
-                Logger.i(LOG_TAG_FIREWALL, "cycle ip-rule for ${currentInfo.uid}, ${currentInfo.ipAddress}: ${current.name} -> ${next.name}")
-                applyIpRule(next)
-            } finally {
-                uiCtx { b.bsConnRuleRowIp.isEnabled = true }
-            }
-        }
-    }
-
-    /** Tap-to-cycle for the domain rule scope: no rule → block → trust → no rule. */
-    private fun cycleDomainRule() {
-        val currentInfo = info ?: return
-        val dnsQuery = currentInfo.dnsQuery ?: return
-        // gate the row for the duration of the pending read-modify-write; the
-        // finally re-enables it on every exit path below
-        b.bsConnRuleRowDomain.isEnabled = false
-        io {
-            try {
-                val current = DomainRulesManager.getDomainRule(dnsQuery, currentInfo.uid)
-                val next =
-                    when (current) {
-                        DomainRulesManager.Status.NONE -> DomainRulesManager.Status.BLOCK
-                        DomainRulesManager.Status.BLOCK -> DomainRulesManager.Status.TRUST
-                        DomainRulesManager.Status.TRUST -> DomainRulesManager.Status.NONE
-                    }
-                Logger.i(LOG_TAG_FIREWALL, "cycle domain-rule for ${currentInfo.uid}, $dnsQuery: ${current.name} -> ${next.name}")
-                applyDomainRule(next)
-            } finally {
-                uiCtx { b.bsConnRuleRowDomain.isEnabled = true }
-            }
-        }
-    }
-
-    private fun renderDomainRuleState(status: DomainRulesManager.Status) {
-        val (text, colorAttr) =
-            when (status) {
-                DomainRulesManager.Status.NONE ->
-                    Pair(getString(R.string.ci_no_rule), R.attr.primaryLightColorText)
-                DomainRulesManager.Status.BLOCK ->
-                    Pair(getString(R.string.ci_block), R.attr.chipTextNegative)
-                DomainRulesManager.Status.TRUST ->
-                    Pair(getString(R.string.ci_trust_rule), R.attr.chipTextPositive)
-            }
-        renderRuleState(b.bsConnDomainRuleState, text, colorAttr)
-        val switchState =
-            when (status) {
-                DomainRulesManager.Status.BLOCK -> LogRuleGlyph.OFF
-                DomainRulesManager.Status.TRUST -> LogRuleGlyph.ON
-                DomainRulesManager.Status.NONE -> LogRuleGlyph.NEUTRAL
-            }
-        b.bsConnDomainRuleSwitch.setRuleState(switchState)
-    }
 
     private fun showFirewallRulesDialog(blockedRule: String?) {
         if (blockedRule == null) return
-
         val headingText: String
         var descText: Spanned
-
         if (blockedRule.contains(FirewallRuleset.RULE2G.id)) {
             val group: Multimap<String, String> = HashMultimap.create()
-
-            val blocklists =
-                if (info?.blocklists?.isEmpty() == true) {
-                    val startIndex = blockedRule.indexOfFirst { it == '|' }
-                    blockedRule.substring(startIndex + 1).split(",")
-                } else {
-                    info?.blocklists?.split(",") ?: listOf()
-                }
-
+            val blocklists = if (info?.blocklists?.isEmpty() == true) {
+                val startIndex = blockedRule.indexOfFirst { it == '|' }
+                blockedRule.substring(startIndex + 1).split(",")
+            } else {
+                info?.blocklists?.split(",") ?: listOf()
+            }
             blocklists.forEach {
                 val items = it.split(":")
                 if (items.count() <= 1) return@forEach
-
                 group.put(items[0], items[1])
             }
             descText = formatText(group)
             val groupCount = group.keys().distinct().count()
-
-            headingText =
-                if (groupCount > 1) {
-                    "${group.keys().firstOrNull()} +${groupCount - 1}"
-                } else if (groupCount == 1) {
-                    group.keys().firstOrNull() ?: getString(R.string.firewall_rule_no_rule)
-                } else {
-                    val tempDesc =
-                        getFirewallRule(FirewallRuleset.RULE2G.id)?.let { getString(it.desc) }
-                            ?: getString(R.string.firewall_rule_no_rule_desc)
-                    descText = htmlToSpannedText(tempDesc)
-                    getFirewallRule(FirewallRuleset.RULE2G.id)?.let { getString(it.title) }
-                        ?: getString(R.string.firewall_rule_no_rule)
-                }
-        } else {
-            headingText =
-                getFirewallRule(blockedRule)?.let { getString(it.title) }
-                    ?: getString(R.string.firewall_rule_no_rule)
-            val tempDesc =
-                getFirewallRule(blockedRule)?.let { getString(it.desc) }
+            headingText = if (groupCount > 1) {
+                "${group.keys().firstOrNull()} +${groupCount - 1}"
+            } else if (groupCount == 1) {
+                group.keys().firstOrNull() ?: getString(R.string.firewall_rule_no_rule)
+            } else {
+                val tempDesc = getFirewallRule(FirewallRuleset.RULE2G.id)?.let { getString(it.desc) }
                     ?: getString(R.string.firewall_rule_no_rule_desc)
+                descText = htmlToSpannedText(tempDesc)
+                getFirewallRule(FirewallRuleset.RULE2G.id)?.let { getString(it.title) } ?: getString(R.string.firewall_rule_no_rule)
+            }
+        } else {
+            headingText = getFirewallRule(blockedRule)?.let { getString(it.title) } ?: getString(R.string.firewall_rule_no_rule)
+            val tempDesc = getFirewallRule(blockedRule)?.let { getString(it.desc) } ?: getString(R.string.firewall_rule_no_rule_desc)
             descText = htmlToSpannedText(tempDesc)
         }
-
-        b.infoDialog = LogInfoDialogState(headingText, descText, FirewallRuleset.getRulesIcon(blockedRule))
+        ui.infoDialog = LogInfoDialogState(headingText, descText, FirewallRuleset.getRulesIcon(blockedRule))
     }
 
     private fun formatText(groupNames: Multimap<String, String>): Spanned {
         var text = ""
         groupNames.keys().distinct().forEach {
-            val heading =
-                it.replaceFirstChar { a ->
-                    if (a.isLowerCase()) a.titlecase(Locale.getDefault()) else a.toString()
-                }
-            text +=
-                getString(
-                    R.string.dns_btm_sheet_dialog_message,
-                    heading,
-                    groupNames.get(it).count().toString(),
-                    TextUtils.join(", ", groupNames.get(it))
-                )
+            val heading = it.replaceFirstChar { a -> if (a.isLowerCase()) a.titlecase(Locale.getDefault()) else a.toString() }
+            text += getString(R.string.dns_btm_sheet_dialog_message, heading, groupNames.get(it).count().toString(), TextUtils.join(", ", groupNames.get(it)))
         }
         text = text.replace(",", ", ")
         return htmlToSpannedText(text)
     }
 
-    private suspend fun applyFirewallRule(
-        firewallStatus: FirewallManager.FirewallStatus,
-        connStatus: FirewallManager.ConnectionStatus
-    ) {
+    private suspend fun applyFirewallRule(firewallStatus: FirewallManager.FirewallStatus, connStatus: FirewallManager.ConnectionStatus) {
         val uid = info?.uid ?: return
-        // persistence + audit log run on IO unconditionally; only the spinner
-        // update is gated on the view lifecycle. Gating the persistence behind
-        // the view check silently dropped the user's firewall change when the
-        // view was destroyed while the fragment remained attached.
+        // persistence + audit log run on IO unconditionally; only the UI update is gated on the
+        // view lifecycle (gating the persistence dropped the change when the view was destroyed
+        // while the fragment remained attached)
         applyFirewallRuleWithLifecycle(
             isViewAlive = { isAdded && view != null },
             persistAndLog = {
@@ -813,70 +439,6 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
             },
             renderUi = { updateFirewallRulesUi(firewallStatus, connStatus) }
         )
-    }
-
-    /** Runs inline on the caller's IO coroutine so the tap-guard covers the write. */
-    private suspend fun applyIpRule(ipRuleStatus: IpRulesManager.IpRuleStatus) {
-        val currentInfo = info ?: return
-        // no need to apply rule, prev selection and current selection are same
-        if (
-            IpRulesManager.getMostSpecificRuleMatch(currentInfo.uid, currentInfo.ipAddress) ==
-                ipRuleStatus
-        )
-            return
-
-        val ipPair = IpRulesManager.getIpNetPort(currentInfo.ipAddress)
-        val ip = ipPair.first ?: return
-        // reject non-CIDR-able input; the ip trie only accepts CIDR notation,
-        // such a rule would be stored but never enforced
-        if (!IpRulesManager.isCidrEnforceable(ip)) {
-            Logger.w(LOG_TAG_FIREWALL, "ip rule not enforceable (not a valid CIDR): ${currentInfo.ipAddress}")
-            uiCtx {
-                showToastUiCentered(
-                    requireContext(),
-                    getString(R.string.ci_dialog_error_invalid_cidr),
-                    Toast.LENGTH_SHORT
-                )
-            }
-            return
-        }
-        IpRulesManager.addIpRule(currentInfo.uid, ip, /*wildcard-port*/ 0, ipRuleStatus)
-        Logger.i(LOG_TAG_FIREWALL, "apply ip-rule for ${currentInfo.uid}, $ip, ${ipRuleStatus.name}")
-        logEvent("IP rule changed", "UID: ${currentInfo.uid}, IP: $ip, IpRuleStatus: ${ipRuleStatus.name}")
-        uiCtx {
-            val (text, colorAttr) =
-                when (ipRuleStatus) {
-                    IpRulesManager.IpRuleStatus.NONE ->
-                        Pair(getString(R.string.ci_no_rule), R.attr.primaryLightColorText)
-                    IpRulesManager.IpRuleStatus.BLOCK ->
-                        Pair(getString(R.string.ci_block), R.attr.chipTextNegative)
-                    IpRulesManager.IpRuleStatus.TRUST ->
-                        Pair(getString(R.string.ci_trust_rule), R.attr.chipTextPositive)
-                    // not offered by this sheet's dialog
-                    IpRulesManager.IpRuleStatus.BYPASS_UNIVERSAL ->
-                        Pair(getString(R.string.ci_bypass_universal), R.attr.primaryLightColorText)
-                }
-            renderRuleState(b.bsConnIpRuleState, text, colorAttr)
-            b.bsConnIpRuleSwitch.setRuleState(ipRuleSwitchState(ipRuleStatus))
-        }
-    }
-
-    /** Runs inline on the caller's IO coroutine so the tap-guard covers the write. */
-    private suspend fun applyDomainRule(domainRuleStatus: DomainRulesManager.Status) {
-        val currentInfo = info ?: return
-        val dnsQuery = currentInfo.dnsQuery ?: return
-        Logger.i(
-            LOG_TAG_FIREWALL,
-            "Apply domain rule for $dnsQuery, ${domainRuleStatus.name}"
-        )
-        DomainRulesManager.addDomainRule(
-            dnsQuery,
-            domainRuleStatus,
-            DomainRulesManager.DomainType.DOMAIN,
-            currentInfo.uid,
-        )
-        logEvent("Domain rule changed", "Domain: $dnsQuery, UID: ${currentInfo.uid}, DomainRuleStatus: ${domainRuleStatus.name}")
-        uiCtx { renderDomainRuleState(domainRuleStatus) }
     }
 
     private fun logEvent(msg: String, details: String) {

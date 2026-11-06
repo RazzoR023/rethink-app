@@ -3225,6 +3225,14 @@
     <string name="rules_route_via_menu" translatable="true">Route via…</string>
     <string name="rules_route_via_title" translatable="true">Route via</string>
     <string name="rules_proxy_ignored_note" translatable="true">Blocked connections are dropped, not routed. The proxy applies once the rule no longer blocks.</string>
+    <string name="rules_action_bypass_short" translatable="true">Bypass</string>
+    <string name="rules_sheet_title_ip" translatable="true">Rules for this IP</string>
+    <string name="rules_sheet_title_domain" translatable="true">Rules for this domain</string>
+    <string name="rules_sheet_section_ip" translatable="true">IP address</string>
+    <string name="rules_sheet_section_domains" translatable="true">Domains</string>
+    <string name="rules_sheet_action_locked" translatable="true">Set on the IP rules page; change it there.</string>
+    <string name="rules_sheet_action_cd" translatable="true">Action for %1$s</string>
+    <string name="rules_sheet_route_cd" translatable="true">Route %1$s: %2$s. Opens the proxy list.</string>
     <string name="rules_edit" translatable="true">Edit</string>
     <string name="rules_delete" translatable="true">Delete</string>
     <string name="rules_dialog_edit_ip" translatable="true">Edit IP or port rule</string>

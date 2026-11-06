@@ -43,47 +43,6 @@ class DnsRowState(context: Context) {
     init { dnsFavIcon.visibility = View.GONE }
 }
 
-class ConnectionDetailsState(context: Context) {
-    val bsConnAppRuleHeading = LogControlState()
-    val bsConnAppRuleState = LogControlState()
-    val bsConnBlockedRule2HeaderLl = LogControlState()
-    val bsConnConnDownload = LogControlState()
-    val bsConnConnDuration = LogControlState()
-    val bsConnConnType = LogControlState()
-    val bsConnConnTypeSecondary = LogControlState()
-    val bsConnConnUpload = LogControlState()
-    val bsConnConnectionFlag = LogControlState()
-    val bsConnConnectionTypeHeading = LogControlState()
-    val bsConnDnsCacheText = LogControlState()
-    val bsConnDomainRuleAddress = LogControlState()
-    val bsConnDomainRuleState = LogControlState()
-    val bsConnDomainRuleSwitch = LogControlState()
-    val bsConnIpRuleAddress = LogControlState()
-    val bsConnIpRuleState = LogControlState()
-    val bsConnIpRuleSwitch = LogControlState()
-    val bsConnRuleRowApp = LogControlState()
-    val bsConnRuleRowDomain = LogControlState()
-    val bsConnRuleRowIp = LogControlState()
-    val bsConnSummaryDetailLl = LogControlState()
-    val bsConnTrackAppIcon = LogControlState()
-    val bsConnTrackAppInfo = LogControlState()
-    val bsConnTrackAppInfoIcon = LogControlState()
-    val bsConnTrackAppInfoTxt = LogControlState()
-    val bsConnTrackAppName = LogControlState()
-    val bsConnTrackAppNameHeader = LogControlState()
-    val bsConnTrackPortDetailChip = LogControlState()
-    val bsConnUnknownAppCheck = LogControlState(checkable = true)
-    val connectionMessage = LogControlState()
-    val root = LogControlState()
-    var infoDialog by mutableStateOf<LogInfoDialogState?>(null)
-    init {
-        bsConnRuleRowDomain.visibility = View.GONE; bsConnBlockedRule2HeaderLl.visibility = View.GONE; bsConnConnTypeSecondary.visibility = View.GONE; bsConnDnsCacheText.visibility = View.GONE
-        bsConnTrackAppIcon.drawable = ContextCompat.getDrawable(context, R.drawable.default_app_icon)
-        bsConnAppRuleHeading.text = context.getString(R.string.lbl_app_rules)
-        listOf(bsConnAppRuleState, bsConnIpRuleState, bsConnDomainRuleState).forEach { it.text = context.getString(R.string.bsdl_rule_status_none) }
-    }
-}
-
 class DnsDetailsState(context: Context) {
     val bsdlAppRuleState = LogControlState()
     val bsdlAppRuleSwitch = LogControlState()

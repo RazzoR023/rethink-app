@@ -362,17 +362,43 @@ object IpRulesManager : KoinComponent {
      * use it right away. Updates [c] and returns it.
      */
     suspend fun setProxy(c: CustomIp, proxyId: String): CustomIp {
-        db.getCustomIpDetail(c.uid, c.ipAddress, c.port)?.let {
+        val stored = db.getCustomIpDetail(c.uid, c.ipAddress, c.port)
+        stored?.let {
             c.status = it.status
             c.proxyCC = it.proxyCC
         }
         c.proxyId = proxyId
+        if (stored == null) {
+            // no rule yet: store a route-only rule (c's status, usually NONE); db.update
+            // would silently skip a row that does not exist
+            c.modifiedDateTime = System.currentTimeMillis()
+            db.insert(c)
+        }
         updateRule(c)
         Logger.i(LOG_TAG_FIREWALL, "ip rule, setProxy: ${c.ipAddress}:${c.port}(${c.uid}) -> '$proxyId'")
         return c
     }
 
     suspend fun clearProxy(c: CustomIp): CustomIp = setProxy(c, "")
+
+    /**
+     * The stored rule for [uid] / [ipaddr] / [port], looked up by the normalized form the rules
+     * are stored under (e.g. a log's "2001:db8::1" is stored expanded); null if none.
+     */
+    suspend fun getRule(uid: Int, ipaddr: IPAddress, port: Int = UNSPECIFIED_PORT): CustomIp? {
+        return db.getCustomIpDetail(uid, padAndNormalize(ipaddr), port)
+    }
+
+    /**
+     * Routes [uid] / [ipaddr] / [port] via [proxyId] ("" clears it), keeping the stored status;
+     * an ip without a rule gets a route-only rule (status NONE: neither blocked nor trusted).
+     */
+    suspend fun setProxy(uid: Int, ipaddr: IPAddress, port: Int, proxyId: String): CustomIp {
+        val normalized = padAndNormalize(ipaddr)
+        val c = db.getCustomIpDetail(uid, normalized, port)
+            ?: makeCustomIp(uid, normalized, port, IpRuleStatus.NONE, wildcard = false, proxyId = "", proxyCC = "")
+        return setProxy(c, proxyId)
+    }
 
     @Deprecated("use setProxy", ReplaceWith("setProxy(c, proxyId)"))
     suspend fun updateProxyId(c: CustomIp, proxyId: String) {

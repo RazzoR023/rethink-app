@@ -100,44 +100,6 @@ internal fun logAnnotated(text: CharSequence): AnnotatedString {
         if (glyph != null) LogRuleGlyphContent(glyph.glyph) else Icon(painterResource(R.drawable.ic_right_arrow_small), null, Modifier.size(16.dp))
     }
 }
-@Composable fun ConnectionDetailsContent(b: ConnectionDetailsState) {
-    Column(Modifier.fillMaxWidth().background(themeColor(R.attr.background)).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-        Handle()
-        DetailCard(hero = true) {
-            Row(Modifier.fillMaxWidth().clickable { b.bsConnTrackAppNameHeader.performClick() }.padding(start = 16.dp, end = 16.dp, top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                LogDrawable(b.bsConnTrackAppIcon, Modifier.padding(end = 12.dp).size(32.dp), stringResource(R.string.apps_icon_content_desc))
-                Column(Modifier.weight(1f)) { LogText(b.bsConnTrackAppName, size = R.dimen.heading_font_text_view, weight = FontWeight.Bold, lines = 1, overflow = TextOverflow.Ellipsis); LogText(b.bsConnTrackPortDetailChip, Modifier.padding(top = 2.dp), size = R.dimen.small_font_text_view, lines = 1, overflow = TextOverflow.Ellipsis, colorAttr = R.attr.primaryLightColorText) }
-                Icon(painterResource(R.drawable.ic_right_arrow_small), stringResource(R.string.bsct_app_info), Modifier.padding(start = 8.dp).size(20.dp).alpha(.5f))
-            }
-            Row(Modifier.fillMaxWidth().clickable { b.bsConnTrackAppInfo.performClick() }.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LogDrawable(b.bsConnTrackAppInfoIcon, Modifier.size(16.dp)); LogText(b.bsConnTrackAppInfoTxt, Modifier.weight(1f), lines = 1, overflow = TextOverflow.Ellipsis)
-                Icon(painterResource(R.drawable.ic_right_arrow_small), null, Modifier.size(14.dp).alpha(.5f))
-            }
-            HorizontalDivider(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp).alpha(.5f), color = themeColor(R.attr.border))
-            DetailLabel(R.string.bsct_meta_destination) { Row { Text(b.bsConnConnectionFlag.text?.toString().orEmpty(), Modifier.padding(end = 10.dp).widthIn(min = 22.dp), fontSize = 18.sp); SelectionContainer { LogText(b.bsConnConnectionTypeHeading, font = FontFamily.Monospace, lines = 1, overflow = TextOverflow.Ellipsis) } } }
-            DetailLabel(R.string.lbl_domain) { SelectionContainer { LogText(b.bsConnDnsCacheText, colorAttr = R.attr.primaryLightColorText) } }
-            DetailLabel(R.string.bsct_meta_info) {
-                if (b.bsConnSummaryDetailLl.isVisible) FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(b.bsConnConnDuration, b.bsConnConnUpload, b.bsConnConnDownload, b.bsConnConnType).forEach { LogText(it, colorAttr = R.attr.primaryLightColorText) }
-                }
-                LogText(b.bsConnConnTypeSecondary, colorAttr = R.attr.primaryLightColorText)
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-        Text(stringResource(R.string.lbl_rules).uppercase(), Modifier.padding(start = 16.dp, top = 16.dp), fontSize = logTextSize(R.dimen.default_font_text_view))
-        DetailCard(Modifier.padding(bottom = 10.dp)) {
-            RuleRow(b.bsConnRuleRowApp, b.bsConnAppRuleHeading.text?.toString()?.ifEmpty { null } ?: stringResource(R.string.lbl_app_rules), b.bsConnAppRuleState)
-            HorizontalDivider(Modifier.padding(start = 16.dp), thickness = .5.dp, color = themeColor(R.attr.border))
-            RuleRow(b.bsConnRuleRowIp, b.bsConnIpRuleAddress.text?.toString().orEmpty(), b.bsConnIpRuleState, b.bsConnIpRuleSwitch)
-            if (b.bsConnRuleRowDomain.isVisible) { HorizontalDivider(Modifier.padding(start = 16.dp), thickness = .5.dp, color = themeColor(R.attr.border)); RuleRow(b.bsConnRuleRowDomain, b.bsConnDomainRuleAddress.text?.toString().orEmpty(), b.bsConnDomainRuleState, b.bsConnDomainRuleSwitch) }
-        }
-        if (b.bsConnBlockedRule2HeaderLl.isVisible) DetailCard(Modifier.padding(bottom = 10.dp)) {
-            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.univ_firewall_rule_3), Modifier.weight(1f), fontSize = logTextSize(R.dimen.large_font_text_view)); OriginalSwitch("bottom_sheet_conn_track:bs_conn_unknown_app_check", b.bsConnUnknownAppCheck.isChecked, { b.bsConnUnknownAppCheck.performClick() }, enabled = b.bsConnUnknownAppCheck.isEnabled) }
-        }
-        SelectionContainer { Text(b.connectionMessage.text?.toString().orEmpty(), Modifier.fillMaxWidth().padding(top = 10.dp, start = 8.dp, end = 8.dp).alpha(.7f), fontSize = logTextSize(R.dimen.mini_font_text_view), textAlign = TextAlign.Center, color = themeColor(R.attr.primaryLightColorText)) }
-    }
-    b.infoDialog?.let { LogInfoDialog(it) { b.infoDialog = null } }
-}
 @Composable fun DnsDetailsContent(b: DnsDetailsState) {
     Column(Modifier.fillMaxWidth().background(themeColor(R.attr.background)).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
         Handle()

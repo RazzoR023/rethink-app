@@ -14,44 +14,34 @@
  * limitations under the License.
  */
 package com.celzero.bravedns.ui.bottomsheet
-import com.celzero.bravedns.ui.compose.appdetails.*
-import com.celzero.bravedns.ui.compose.RethinkTheme
 
-import com.celzero.bravedns.util.Logger
-import com.celzero.bravedns.util.Logger.LOG_TAG_FIREWALL
-import com.celzero.bravedns.util.Logger.LOG_TAG_UI
 import android.content.DialogInterface
 import android.content.res.Configuration
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
 import com.celzero.bravedns.R
-import com.celzero.bravedns.database.CustomDomain
-import com.celzero.bravedns.database.EventSource
-import com.celzero.bravedns.database.EventType
-import com.celzero.bravedns.database.Severity
-import com.celzero.bravedns.database.WgConfigFilesImmutable
-import com.celzero.bravedns.service.DomainRulesManager
 import com.celzero.bravedns.service.EventLogger
-import com.celzero.bravedns.service.FirewallManager
 import com.celzero.bravedns.service.PersistentState
-import com.celzero.bravedns.service.WireguardManager
+import com.celzero.bravedns.ui.compose.RethinkTheme
+import com.celzero.bravedns.ui.compose.rules.AppRuleSheetScreen
+import com.celzero.bravedns.ui.compose.rules.RuleSheetActions
+import com.celzero.bravedns.ui.compose.rules.RuleSheetLogic
+import com.celzero.bravedns.ui.compose.rules.RuleSheetState
 import com.celzero.bravedns.util.Constants.Companion.INVALID_UID
 import com.celzero.bravedns.util.Themes
 import com.celzero.bravedns.util.Themes.Companion.getBottomSheetCurrentTheme
-import com.celzero.bravedns.util.UIUtils.htmlToSpannedText
-import com.celzero.bravedns.util.Utilities
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 
-class AppDomainRulesBottomSheet : BaseBottomSheetDialogFragment(), WireguardListBtmSheet.WireguardDismissListener  {
-    private val b = AppRuleSheetState()
+/**
+ * App details -> Domains -> a row: trust / block the domain for the app, and route it via a
+ * proxy ("Route via", independent of trust / block).
+ */
+class AppDomainRulesBottomSheet : BaseBottomSheetDialogFragment() {
 
     private val persistentState by inject<PersistentState>()
     private val eventLogger by inject<EventLogger>()
@@ -60,24 +50,19 @@ class AppDomainRulesBottomSheet : BaseBottomSheetDialogFragment(), WireguardList
     private var dismissListener: OnBottomSheetDialogFragmentDismiss? = null
     private var position: Int = -1
 
-    override fun getTheme(): Int =
-        getBottomSheetCurrentTheme(isDarkThemeOn(), persistentState.theme)
+    private val state = RuleSheetState()
+    private val header = AppSheetHeader()
+    private lateinit var actions: RuleSheetActions
 
-    private var uid: Int = -1
-    private var domain: String = ""
-    private var domainRule: DomainRulesManager.Status = DomainRulesManager.Status.NONE
-    private var cd: CustomDomain? = null
+    override fun getTheme(): Int = getBottomSheetCurrentTheme(isDarkThemeOn(), persistentState.theme)
 
     companion object {
         const val UID = "UID"
         const val DOMAIN = "DOMAIN"
-        private const val TAG = "AppDomainBtmSht"
     }
 
-    private fun isDarkThemeOn(): Boolean {
-        return resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
-    }
+    private fun isDarkThemeOn(): Boolean =
+        resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
 
     interface OnBottomSheetDialogFragmentDismiss {
         fun notifyDataset(position: Int)
@@ -88,251 +73,39 @@ class AppDomainRulesBottomSheet : BaseBottomSheetDialogFragment(), WireguardList
         position = pos
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
-        androidx.compose.ui.platform.ComposeView(requireContext()).apply {
-            setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent { RethinkTheme { AppRuleSheetContent(b) } }
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        actions = ruleSheetActions(state, eventLogger, "App domain rule")
+        return ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                RethinkTheme {
+                    AppRuleSheetScreen(stringResource(R.string.rules_sheet_title_domain), header.name, header.icon, state, actions)
+                }
+            }
         }
+    }
 
-
+    override fun onStart() {
+        super.onStart()
+        transparentSheetFrame()
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        dialog?.window?.let { window ->
-            Themes.applyBottomSheetSystemBarAppearance(window, isDarkThemeOn(), persistentState.theme)
-        }
-
-        uid = arguments?.getInt(UID) ?: INVALID_UID
-        domain = arguments?.getString(DOMAIN) ?: ""
-
-        init()
-        initializeClickListeners()
-        setRulesUi()
-    }
-
-    private fun init() {
+        dialog?.window?.let { Themes.applyBottomSheetSystemBarAppearance(it, isDarkThemeOn(), persistentState.theme) }
+        val uid = arguments?.getInt(UID) ?: INVALID_UID
+        val domain = arguments?.getString(DOMAIN).orEmpty()
         if (uid == INVALID_UID) {
-            this.dismiss()
+            dismiss()
             return
         }
-        io {
-            cd = DomainRulesManager.getObj(uid, domain)
-            if (cd == null) {
-                cd = DomainRulesManager.makeCustomDomain(uid, domain)
-            }
-        }
-        updateAppDetails()
-        // making use of the same layout used for ip rules, so changing the text and
-        // removing the recycler related changes
-        b.bsacIpAddressTv.text = domain
-        b.bsacIpRuleTxt.text = htmlToSpannedText(getString(R.string.bsct_block_domain))
-
-        b.bsacDomainRuleTxt.visibility = View.GONE
-        b.bsacDomainLl.visibility = View.GONE
-    }
-
-    private fun updateAppDetails() {
-        if (uid == -1) return
-
-        io {
-            val appNames = FirewallManager.getAppNamesByUid(uid)
-            if (appNames.isEmpty()) {
-                uiCtx { handleNonApp() }
-                return@io
-            }
-            val pkgName = FirewallManager.getPackageNameByAppName(appNames[0])
-
-            val appCount = appNames.count()
-            uiCtx {
-                if (appCount >= 1) {
-                    b.bsacAppName.text =
-                        if (appCount >= 2) {
-                            getString(
-                                R.string.ctbs_app_other_apps,
-                                appNames[0],
-                                appCount.minus(1).toString()
-                            )
-                        } else {
-                            appNames[0]
-                        }
-                    if (pkgName == null) return@uiCtx
-                    b.bsacAppIcon.setImageDrawable(
-                        Utilities.getIcon(requireContext(), pkgName)
-                    )
-                } else {
-                    // apps which are not available in cache are treated as non app.
-                    // TODO: check packageManager#getApplicationInfo() for appInfo
-                    handleNonApp()
-                }
-            }
-        }
-    }
-
-    private fun handleNonApp() {
-        b.bsacAppName.visibility = View.GONE
-        b.bsacAppIcon.visibility = View.GONE
-    }
-
-    private fun setRulesUi() {
-        io {
-            // no need to send port number for the app info screen
-            domainRule = DomainRulesManager.status(domain, uid)
-            Logger.d(LOG_TAG_FIREWALL, "$TAG set selection of ip: $domain, ${domainRule.id}")
-            uiCtx {
-                when (domainRule) {
-                    DomainRulesManager.Status.TRUST -> {
-                        enableTrustUi()
-                    }
-                    DomainRulesManager.Status.BLOCK -> {
-                        enableBlockUi()
-                    }
-                    DomainRulesManager.Status.NONE -> {
-                        noRuleUi()
-                    }
-                }
-            }
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (uid == INVALID_UID) {
-            this.dismiss()
-            return
-        }
-    }
-
-    private fun initializeClickListeners() {
-
-        b.blockIcon.setOnClickListener {
-            if (domainRule == DomainRulesManager.Status.BLOCK) {
-                applyDomainRule(DomainRulesManager.Status.NONE)
-                noRuleUi()
-            } else {
-                applyDomainRule(DomainRulesManager.Status.BLOCK)
-                enableBlockUi()
-            }
-        }
-
-        b.trustIcon.setOnClickListener {
-            if (domainRule == DomainRulesManager.Status.TRUST) {
-                applyDomainRule(DomainRulesManager.Status.NONE)
-                noRuleUi()
-            } else {
-                applyDomainRule(DomainRulesManager.Status.TRUST)
-                enableTrustUi()
-            }
-        }
-
-        b.chooseProxyRl.setOnClickListener {
-            val ctx = requireContext()
-            val v: MutableList<WgConfigFilesImmutable?> = mutableListOf()
-            io {
-                v.add(null)
-                v.addAll(WireguardManager.getAllMappings())
-                if (v.isEmpty()) {
-                    Logger.v(LOG_TAG_UI, "$TAG no wireguard configs found")
-                    uiCtx {
-                        Utilities.showToastUiCentered(
-                            ctx,
-                            getString(R.string.wireguard_no_config_msg),
-                            Toast.LENGTH_SHORT
-                        )
-                    }
-                    return@io
-                }
-                uiCtx {
-                    Logger.v(LOG_TAG_UI, "$TAG show wg list(${v.size} for ${cd?.domain}, $uid")
-                    showWgListBtmSheet(v)
-                }
-            }
-        }
-
-    }
-
-
-    private fun showWgListBtmSheet(data: List<WgConfigFilesImmutable?>) {
-        Logger.v(LOG_TAG_UI, "$TAG show wg list(${data.size} for ${cd?.domain}, uid: $uid")
-        val bottomSheetFragment = WireguardListBtmSheet.newInstance(WireguardListBtmSheet.InputType.DOMAIN, cd, data, this)
-        bottomSheetFragment.show(
-            requireActivity().supportFragmentManager,
-            bottomSheetFragment.tag
-        )
-    }
-
-    private fun applyDomainRule(status: DomainRulesManager.Status) {
-        Logger.i(LOG_TAG_FIREWALL, "$TAG domain rule for uid: $uid:$domain (${status.name})")
-        domainRule = status
-
-        // set port number as null for all the rules applied from this screen
-        io {
-            DomainRulesManager.changeStatus(
-                domain,
-                uid,
-                "",
-                DomainRulesManager.DomainType.DOMAIN,
-                status
-            )
-        }
-        logEvent("Domain rule applied: $domain, $uid, ${status.name}")
+        header.load(this, uid)
+        if (state.rows.isEmpty()) actions.load(RuleSheetLogic.domainSheetRows(uid, domain))
     }
 
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
         dismissListener?.notifyDataset(position)
     }
-
-    private fun enableTrustUi() {
-        b.trustIcon.setImageDrawable(
-            ContextCompat.getDrawable(requireContext(), R.drawable.ic_trust_accent)
-        )
-        b.blockIcon.setImageDrawable(
-            ContextCompat.getDrawable(requireContext(), R.drawable.ic_block)
-        )
-    }
-
-    private fun enableBlockUi() {
-        b.trustIcon.setImageDrawable(
-            ContextCompat.getDrawable(requireContext(), R.drawable.ic_trust)
-        )
-        b.blockIcon.setImageDrawable(
-            ContextCompat.getDrawable(requireContext(), R.drawable.ic_block_accent)
-        )
-    }
-
-    private fun noRuleUi() {
-        b.trustIcon.setImageDrawable(
-            ContextCompat.getDrawable(requireContext(), R.drawable.ic_trust)
-        )
-        b.blockIcon.setImageDrawable(
-            ContextCompat.getDrawable(requireContext(), R.drawable.ic_block)
-        )
-    }
-
-    private fun logEvent(details: String) {
-        eventLogger.log(EventType.FW_RULE_MODIFIED, Severity.LOW, "App domain rule", EventSource.UI, false, details)
-    }
-
-    private fun io(f: suspend () -> Unit) {
-        lifecycleScope.launch(Dispatchers.IO) { f() }
-    }
-
-    private suspend fun uiCtx(f: suspend () -> Unit) {
-        withContext(Dispatchers.Main) {
-            if (isAdded && view != null) {
-                f()
-            }
-        }
-    }
-
-    override fun onDismissWg(obj: Any?) {
-        try {
-            val customDomain = obj as CustomDomain
-            cd = customDomain
-            setRulesUi()
-            Logger.i(LOG_TAG_UI, "$TAG onDismissWg: ${cd?.domain}, $uid, ${cd?.proxyId}")
-        } catch (e: Exception) {
-            Logger.e(LOG_TAG_UI, "$TAG err in onDismissWg ${e.message}", e)
-        }
-    }
 }
+

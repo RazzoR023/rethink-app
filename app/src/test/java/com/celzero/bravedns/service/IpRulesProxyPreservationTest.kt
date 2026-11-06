@@ -204,4 +204,57 @@ class IpRulesProxyPreservationTest {
         assertTrue(tree.allValues().isEmpty())
         assertNotNull(store.repo)
     }
+
+    @Test
+    fun `setProxy on an ip without a rule creates a route-only rule`() = runBlocking {
+        IpRulesManager.setProxy(uid, ip("1.2.3.4"), 0, "S5")
+        val s = stored(uid, "1.2.3.4")!!
+        assertEquals("S5", s.proxyId)
+        assertEquals(IpRuleStatus.NONE.id, s.status)
+        assertEquals(Pair("S5", ""), IpRulesManager.getProxyForIpPort(uid, "1.2.3.4", 0))
+        assertEquals(IpRuleStatus.NONE, IpRulesManager.getMostSpecificRuleMatch(uid, "1.2.3.4"))
+
+        // clearing keeps the (status-less) rule row; the proxy is gone
+        IpRulesManager.setProxy(uid, ip("1.2.3.4"), 0, "")
+        assertEquals("", stored(uid, "1.2.3.4")!!.proxyId)
+        assertEquals(none, IpRulesManager.getProxyForIpPort(uid, "1.2.3.4", 0))
+    }
+
+    @Test
+    fun `setProxy with a CustomIp that is not stored inserts it`() = runBlocking {
+        val c = IpRulesManager.mkCustomIp(uid, "5.6.7.8", 0)
+        IpRulesManager.setProxy(c, "wg1")
+        assertEquals("wg1", stored(uid, "5.6.7.8")!!.proxyId)
+        assertEquals(Pair("wg1", ""), IpRulesManager.getProxyForIpPort(uid, "5.6.7.8", 0))
+    }
+
+    @Test
+    fun `setProxy by ip keeps the stored status, and a later status change keeps the proxy`() = runBlocking {
+        add(uid, "1.2.3.4", 0, IpRuleStatus.BLOCK)
+        IpRulesManager.setProxy(uid, ip("1.2.3.4"), 0, "wg2")
+        assertEquals(IpRuleStatus.BLOCK.id, stored(uid, "1.2.3.4")!!.status)
+        add(uid, "1.2.3.4", 0, IpRuleStatus.TRUST)
+        assertEquals("wg2", stored(uid, "1.2.3.4")!!.proxyId)
+        assertEquals(IpRuleStatus.TRUST.id, stored(uid, "1.2.3.4")!!.status)
+    }
+
+    @Test
+    fun `getRule finds a rule by the normalized form of the ip`() = runBlocking {
+        val c = add(uid, "2001:db8::1", 0, IpRuleStatus.BLOCK, "S5")
+        val found = IpRulesManager.getRule(uid, ip("2001:db8::1"))
+        assertNotNull(found)
+        assertEquals(c.ipAddress, found!!.ipAddress)
+        assertEquals("S5", found.proxyId)
+        assertNull(IpRulesManager.getRule(10043, ip("2001:db8::1")))
+    }
+
+    @Test
+    fun `route-only rules are per uid`() = runBlocking {
+        IpRulesManager.setProxy(UID_EVERYBODY, ip("9.9.9.9"), 0, "S5")
+        IpRulesManager.setProxy(uid, ip("9.9.9.9"), 0, "wg1")
+        assertEquals("S5", stored(UID_EVERYBODY, "9.9.9.9")!!.proxyId)
+        assertEquals("wg1", stored(uid, "9.9.9.9")!!.proxyId)
+        IpRulesManager.setProxy(uid, ip("9.9.9.9"), 0, "")
+        assertEquals("S5", stored(UID_EVERYBODY, "9.9.9.9")!!.proxyId)
+    }
 }
