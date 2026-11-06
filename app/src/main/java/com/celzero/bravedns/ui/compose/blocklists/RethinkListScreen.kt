@@ -68,6 +68,7 @@ import kotlinx.coroutines.flow.Flow
                     RethinkChoice(b.radioMax, R.string.radio_max_btn, "max")
                 }
                 Text(b.frlDesc.text, Modifier.padding(16.dp), color = themeColor(R.attr.primaryLightColorText), fontSize = 14.sp)
+                RethinkServerSetting(appConfig)
             } }
             items(list.itemCount) { index -> list[index]?.let { endpoint -> RethinkEndpointRow(endpoint, presenter, if (configure == null) 4.dp else 0.dp) } }
             if (state != null && list.itemCount == 0) item {
@@ -84,7 +85,7 @@ import kotlinx.coroutines.flow.Flow
             Surface(shape = MaterialTheme.shapes.extraLarge, color = themeColor(R.attr.background)) {
                 Column(Modifier.padding(24.dp).verticalScroll(rememberScrollState())) {
                     Text(endpoint.name, style = MaterialTheme.typography.headlineSmall, color = themeColor(R.attr.primaryTextColor))
-                    Text(endpoint.url + "\n\n" + endpoint.desc, Modifier.padding(vertical = 16.dp), color = themeColor(R.attr.primaryTextColor))
+                    Text(presenter.displayUrl(endpoint) + "\n\n" + endpoint.desc, Modifier.padding(vertical = 16.dp), color = themeColor(R.attr.primaryTextColor))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         OriginalButton("@dialog_positive", onClick = { presenter.copy(endpoint); presenter.metadata = null }) { Text(stringResource(R.string.dns_info_neutral), color = themeColor(R.attr.secondaryTextColor)) }
                         OriginalButton("@dialog_positive", onClick = { if (presenter.editable(endpoint)) presenter.edit(endpoint); presenter.metadata = null }) { Text(stringResource(if (presenter.editable(endpoint)) R.string.rt_edit_dialog_positive else R.string.dns_info_positive), color = themeColor(androidx.appcompat.R.attr.colorPrimary)) }

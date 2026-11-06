@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.celzero.bravedns.data.AppConfig
 import com.celzero.bravedns.service.PersistentState
+import com.celzero.bravedns.service.RethinkServers
 import com.celzero.bravedns.service.RethinkBlocklistManager
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.Logger
@@ -31,7 +32,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.regex.Pattern
 
 class RethinkBlocklistViewModel(
     private val persistentState: PersistentState,
@@ -64,17 +64,6 @@ class RethinkBlocklistViewModel(
     @Volatile
     var modifiedStamp: String = ""
         private set
-
-    // base64 stamp: appears as a URL path segment, e.g. https://max.rethinkdns.com/1:IAAgAA==
-    // anchored with / before and end-of-string/. / ? / # after so it can't match mid-path
-    private val base64StampRegex =
-        Pattern.compile("/1:([A-Za-z0-9+/=]+)(?:[.?#]|$)")
-
-    // base32 stamp: appears as a subdomain prefix, e.g. //1-acaabaa.max.rethinkdns.com
-    // or 1-acaabaa.max.rethinkdns.com (bare); an optional subdomain (max/sky) sits
-    // between the stamp and .rethinkdns.com
-    private val base32StampRegex =
-        Pattern.compile("(?:^|//)1-([a-z2-7]+)(?:\\.[^/]+)?\\.rethinkdns\\.com")
 
     private var isConfigured = false
 
@@ -216,11 +205,9 @@ class RethinkBlocklistViewModel(
     }
 
     private fun getRemoteUrlWithStamp(stamp: String): String {
-        return if (remoteUrl.contains(Constants.MAX_ENDPOINT)) {
-            Constants.RETHINK_BASE_URL_MAX + stamp
-        } else {
-            Constants.RETHINK_BASE_URL_SKY + stamp
-        }
+        // stored urls stay on the official host (sky/max); RethinkServers maps them onto a
+        // custom server when one is set
+        return RethinkServers.storedUrl(remoteUrl.contains(Constants.MAX_ENDPOINT), stamp)
     }
 
     suspend fun revertStamp() {
@@ -240,25 +227,13 @@ class RethinkBlocklistViewModel(
         stampJob?.cancel()
     }
 
-    fun extractStamp(t: String): String? {
-        // format 1: https://max.rethinkdns.com/1:IAAgAA== (base64 after ":")
-        // format 2: //1-acaabaa.max.rethinkdns.com (base32 after "-")
-        val base64Match = base64StampRegex.matcher(t)
-        if (base64Match.find()) {
-            return "${Constants.RETHINK_STAMP_VERSION}:${base64Match.group(1)}"
-        }
+    // https://max.rethinkdns.com/1:IAAgAA== or //1-acaabaa.max.rethinkdns.com; the custom
+    // Rethink DNS host is accepted in place of rethinkdns.com
+    fun extractStamp(t: String): String? =
+        RethinkServers.extractStamp(RethinkServers.config(persistentState), t)
 
-        val base32Match = base32StampRegex.matcher(t)
-        if (base32Match.find()) {
-            return "${Constants.RETHINK_STAMP_VERSION}-${base32Match.group(1)}"
-        }
-        return null
-    }
-
-    fun isRethinkStampSearch(t: String): Boolean {
-        // do not proceed if rethinkdns.com is not available
-        return t.contains(Constants.RETHINKDNS_DOMAIN)
-    }
+    fun isRethinkStampSearch(t: String): Boolean =
+        RethinkServers.isRethinkUrl(RethinkServers.config(persistentState), t)
 
     fun restoreStamp(query: String) {
         viewModelScope.launch(Dispatchers.IO) {

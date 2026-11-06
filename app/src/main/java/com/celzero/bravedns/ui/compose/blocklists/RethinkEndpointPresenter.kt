@@ -30,8 +30,10 @@ class RethinkEndpointPresenter(private val context: Context, private val appConf
     fun editable(endpoint: RethinkDnsEndpoint) = endpoint.isEditable(context)
     fun select(endpoint: RethinkDnsEndpoint) = updateConnection(endpoint)
     fun edit(endpoint: RethinkDnsEndpoint) = openEditConfiguration(endpoint)
+    // the url as dialled: on the custom Rethink DNS server when one is set
+    fun displayUrl(endpoint: RethinkDnsEndpoint): String = appConfig.rethinkDisplayUrl(endpoint.url)
     fun copy(endpoint: RethinkDnsEndpoint) {
-        clipboardCopy(context, endpoint.url, context.getString(R.string.copy_clipboard_label))
+        clipboardCopy(context, displayUrl(endpoint), context.getString(R.string.copy_clipboard_label))
         Utilities.showToastUiCentered(context, context.getString(R.string.info_dialog_url_copy_toast_msg), Toast.LENGTH_SHORT)
     }
         private fun updateConnection(endpoint: RethinkDnsEndpoint) {

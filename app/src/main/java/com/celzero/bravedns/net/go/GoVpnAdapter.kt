@@ -55,16 +55,13 @@ import com.celzero.bravedns.service.PersistentState
 import com.celzero.bravedns.service.ProxyManager
 import com.celzero.bravedns.service.ProxyManager.ID_WG_BASE
 import com.celzero.bravedns.service.RethinkBlocklistManager
+import com.celzero.bravedns.service.RethinkServers
 import com.celzero.bravedns.service.WireguardManager
 import com.celzero.bravedns.ui.activity.AntiCensorshipActivity
 import com.celzero.bravedns.ui.activity.AppLockActivity
 import com.celzero.bravedns.util.Constants
-import com.celzero.bravedns.util.Constants.Companion.MAX_ENDPOINT
 import com.celzero.bravedns.util.Constants.Companion.ONDEVICE_BLOCKLIST_FILE_TAG
 import com.celzero.bravedns.util.Constants.Companion.REMOTE_BLOCKLIST_DOWNLOAD_FOLDER_NAME
-import com.celzero.bravedns.util.Constants.Companion.RETHINKDNS_DOMAIN
-import com.celzero.bravedns.util.Constants.Companion.RETHINK_BASE_URL_MAX
-import com.celzero.bravedns.util.Constants.Companion.RETHINK_BASE_URL_SKY
 import com.celzero.bravedns.util.Constants.Companion.UNSPECIFIED_IP_IPV4
 import com.celzero.bravedns.util.Constants.Companion.UNSPECIFIED_IP_IPV6
 import com.celzero.bravedns.util.UIUtils.getAccentColor
@@ -297,7 +294,8 @@ class GoVpnAdapter : KoinComponent {
                 val blockfreeUrl = appConfig.getBlockFreeRethinkEndpoint()
 
                 if (blockfreeUrl.isNotEmpty()) {
-                    Logger.i(LOG_TAG_VPN, "$TAG adding blockfree url: $blockfreeUrl")
+                    val safe = RethinkServers.redact(RethinkServers.config(persistentState), blockfreeUrl)
+                    Logger.i(LOG_TAG_VPN, "$TAG adding blockfree url: $safe")
                     addRdnsTransport(Backend.BlockFree, blockfreeUrl)
                 } else {
                     Logger.i(LOG_TAG_VPN, "$TAG no blockfree url found")
@@ -604,68 +602,51 @@ class GoVpnAdapter : KoinComponent {
     }
 
     private suspend fun addRdnsTransport(id: String, url: String) {
-        Logger.v(LOG_TAG_VPN, "$TAG addRdnsTransport, id: $id, url: $url")
+        val cfg = RethinkServers.config(persistentState)
+        // the block-free url of a custom server may carry its access secret; never log it
+        val safeUrl = RethinkServers.redact(cfg, url)
+        Logger.v(LOG_TAG_VPN, "$TAG addRdnsTransport, id: $id, url: $safeUrl")
         try {
-            val useDot = false
-            val ips: String = getIpString(context, url)
-            val convertedUrl = getRdnsUrl(url) ?: return
-            if (url.contains(RETHINK_BASE_URL_SKY) || !useDot) {
+            val t = getRdnsUrl(cfg, url) ?: return
+            val convertedUrl = t.url
+            // bootstrap ips are only known for the official hosts; a custom server is
+            // resolved through the default dns
+            val ips: String = getIpString(context, if (cfg.isCustom) convertedUrl else url)
+            // never log the access secret of a custom server
+            val logUrl = RethinkServers.redact(cfg, convertedUrl)
+            if (!t.dot) {
                 Intra.addDoHTransport(tunnel, id, convertedUrl, ips)
-                Logger.i(LOG_TAG_VPN, "$TAG new doh (rdns): $id, url: $convertedUrl, ips: $ips")
+                Logger.i(LOG_TAG_VPN, "$TAG new doh (rdns): $id, url: $logUrl, ips: $ips")
             } else {
                 Intra.addDoTTransport(tunnel, id, convertedUrl, ips)
-                Logger.i(LOG_TAG_VPN, "$TAG new dot (rdns): $id, url: $convertedUrl, ips: $ips")
+                Logger.i(LOG_TAG_VPN, "$TAG new dot (rdns): $id, url: $logUrl, ips: $ips")
             }
             logEvent(
                 Severity.LOW,
                 "rdns transport added",
-                "id: $id, url: $convertedUrl, ips: $ips"
+                "id: $id, url: $logUrl, ips: $ips"
             )
         } catch (e: Exception) {
-            Logger.e(LOG_TAG_VPN, "$TAG connect-tunnel: rdns failure, url: $url ($id)", e)
+            Logger.e(LOG_TAG_VPN, "$TAG connect-tunnel: rdns failure, url: $safeUrl ($id)", e)
             removeResolver(id)
             showDnsFailureNotification(context.getString(R.string.dc_rethink_dns_radio), e.message ?: context.getString(R.string.system_dns_connection_failure))
-            showDnsFailureToast(url)
+            showDnsFailureToast(safeUrl)
             logEvent(
                 Severity.HIGH,
                 "rdns transport error ($id)",
-                "error adding rdns transport for url: $url ($id), reason: ${e.message}"
+                "error adding rdns transport for url: $safeUrl ($id), reason: ${e.message?.let { RethinkServers.redact(cfg, it) }}"
             )
         }
         Logger.v(LOG_TAG_VPN, "$TAG addRdnsTransport done")
     }
 
-    private suspend fun getRdnsUrl(url: String, useDot: Boolean = false): String? {
-        val tls = "tls://"
-        val default = "dns-query"
-        // do not proceed if rethinkdns.com is not available
-        if (!url.contains(RETHINKDNS_DOMAIN)) return null
-
-        // if url is MAX, convert it to dot format, DOT format stamp.max.rethinkdns.com
-        // if url is SKY, convert it to doh format, DOH format https://sky.rethikdns.com/stamp
-
-        // for blockfree, the url is https://max.rethinkdns.com/dns-query
-        if (url == Constants.BLOCK_FREE_DNS_MAX && useDot) {
-            return "$tls$MAX_ENDPOINT.$RETHINKDNS_DOMAIN"
-        } else if (url == Constants.BLOCK_FREE_DNS_SKY || url == Constants.BLOCK_FREE_DNS_MAX || url == Constants.BLOCK_FREE_DNS_ZERO) {
-            return url
-        } else {
-            // no-op, pass-through
-        }
-        val stamp = getRdnsStamp(url)
-        return if (url.contains(MAX_ENDPOINT) && useDot) {
-            // if the stamp is empty or "dns-query", then remove it
-            if (stamp.isEmpty() || stamp == default) {
-                return "$tls$MAX_ENDPOINT.$RETHINKDNS_DOMAIN"
-            }
-            "$tls$stamp.$MAX_ENDPOINT.$RETHINKDNS_DOMAIN"
-        } else {
-            if (url.contains(MAX_ENDPOINT)) {
-                return "$RETHINK_BASE_URL_MAX$stamp"
-            } else {
-                return "$RETHINK_BASE_URL_SKY$stamp"
-            }
-        }
+    // official servers: doh on sky/max (stamp in base32); custom server: same stamp on the
+    // user's serverless-dns host, over doh or (if enabled) dot; see RethinkServers
+    private suspend fun getRdnsUrl(cfg: RethinkServers.Config, url: String): RethinkServers.Transport? {
+        // getBase32Stamp is suspend; resolve the stamp up front, then build synchronously
+        val stamp = RethinkServers.stampOf(cfg, url)
+        val b32 = getBase32Stamp(stamp)
+        return RethinkServers.transport(cfg, url) { if (it == stamp) b32 else it }
     }
 
     suspend fun unlink() {
@@ -689,17 +670,6 @@ class GoVpnAdapter : KoinComponent {
                 "error unlinking tunnel, reason: ${e.message}"
             )
         }
-    }
-
-    private suspend fun getRdnsStamp(url: String): String {
-        val s = url.split(RETHINKDNS_DOMAIN)[1]
-        val stamp =
-            if (s.startsWith("/")) {
-                s.substring(1)
-            } else {
-                s
-            }
-        return getBase32Stamp(stamp)
     }
 
     private suspend fun getBase32Stamp(stamp: String): String {

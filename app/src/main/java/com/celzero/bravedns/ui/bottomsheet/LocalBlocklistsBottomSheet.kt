@@ -39,6 +39,7 @@ import com.celzero.bravedns.customdownloader.LocalBlocklistCoordinator
 import com.celzero.bravedns.download.AppDownloadManager
 import com.celzero.bravedns.download.DownloadConstants
 import com.celzero.bravedns.service.PersistentState
+import com.celzero.bravedns.service.RethinkServers
 import com.celzero.bravedns.service.RethinkBlocklistManager
 import com.celzero.bravedns.service.VpnController
 import com.celzero.bravedns.scheduler.WorkScheduler
@@ -547,7 +548,8 @@ class LocalBlocklistsBottomSheet : BaseBottomSheetDialogFragment() {
         b.lbbsConfigure.onClick = { invokeRethinkActivity() }
 
         b.lbbsCopy.onClick = {
-            val url = Constants.RETHINK_BASE_URL_MAX + persistentState.localBlocklistStamp
+            val url = RethinkServers.dohBase(RethinkServers.config(persistentState), isMax = true) +
+                persistentState.localBlocklistStamp
             clipboardCopy(
                 requireContext(),
                 url,

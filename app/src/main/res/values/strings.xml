@@ -3309,4 +3309,28 @@
         <item quantity="other">%1$d apps</item>
     </plurals>
 
+    <!-- custom (self-hosted) Rethink DNS server -->
+    <string name="rdns_server_title">Rethink DNS server</string>
+    <string name="rdns_server_default">Default (%1$s)</string>
+    <string name="rdns_server_custom_doh">%1$s · DNS-over-HTTPS</string>
+    <string name="rdns_server_custom_dot">%1$s · DNS-over-TLS</string>
+    <string name="rdns_server_desc">Use your own serverless-dns instance instead of the Rethink servers. Your blocklists stay the same; Sky and Max only choose between the default servers.</string>
+    <string name="rdns_server_url_label">Server URL</string>
+    <string name="rdns_server_url_hint">https://dns.example.com</string>
+    <string name="rdns_server_url_help">Leave empty to use the default servers.</string>
+    <string name="rdns_server_url_invalid">Enter an https URL or a host name</string>
+    <string name="rdns_server_dot">Use DNS-over-TLS</string>
+    <string name="rdns_server_dot_desc">Connects to &lt;blocklists&gt;.%1$s on port 853. Your server needs a wildcard TLS certificate for it.</string>
+    <string name="rdns_server_test">Test</string>
+    <string name="rdns_server_testing">Testing</string>
+    <string name="rdns_server_test_ok">Works</string>
+    <string name="rdns_server_test_failed">Failed: %1$s</string>
+    <string name="rdns_server_reset">Reset to default</string>
+    <string name="rdns_server_secret_label">Access secret (optional)</string>
+    <string name="rdns_server_secret_help">For a server with ACCESS_KEYS set. Letters and digits only.</string>
+    <string name="rdns_server_secret_invalid">Use letters and digits only</string>
+    <string name="rdns_server_secret_generate">Generate</string>
+    <string name="rdns_server_access_key_label">ACCESS_KEYS value for your server</string>
+    <string name="rdns_server_copy">Copy</string>
+
 </resources>

@@ -1586,6 +1586,15 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
                 }
             }
 
+            PersistentState.CUSTOM_RETHINK_DNS_DOT, PersistentState.CUSTOM_RETHINK_DNS_SECRET -> {
+                // a server url change re-adds transports via DNS_CHANGE (the connected url
+                // changes); a doh <-> dot switch or a new access secret on the same server
+                // does not, so handle those here
+                io("customRethinkDot") {
+                    if (appConfig.isRethinkDnsConnected()) addTransport()
+                }
+            }
+
             PersistentState.PREVENT_DNS_LEAKS -> {
                 io("preventDnsLeaks") { setTunMode() }
             }

@@ -60,6 +60,9 @@ class PersistentState(context: Context) : SimpleKrate(context), KoinComponent {
         const val NETWORK = "add_all_networks_to_vpn"
         const val NOTIFICATION_ACTION = "notification_action"
         const val DNS_CHANGE = "connected_dns_name"
+        const val CUSTOM_RETHINK_DNS = "custom_rethink_dns_url"
+        const val CUSTOM_RETHINK_DNS_DOT = "custom_rethink_dns_dot"
+        const val CUSTOM_RETHINK_DNS_SECRET = "custom_rethink_dns_secret"
         const val INTERNET_PROTOCOL = "internet_protocol"
         const val PROTOCOL_TRANSLATION = "protocol_translation"
         const val DEFAULT_DNS_SERVER = "default_dns_query"
@@ -353,6 +356,16 @@ class PersistentState(context: Context) : SimpleKrate(context), KoinComponent {
 
     // enable dns alg
     var enableDnsAlg by booleanPref("dns_alg").withDefault<Boolean>(false)
+
+    // self-hosted serverless-dns base ("https://host[:port]") used instead of the official
+    // Rethink DNS servers; empty = official servers. See RethinkServers.
+    var customRethinkDnsUrl by stringPref(CUSTOM_RETHINK_DNS).withDefault<String>("")
+
+    // dial the custom Rethink DNS server over DoT (<stamp>.<host>, needs a wildcard cert)
+    var customRethinkDnsDot by booleanPref(CUSTOM_RETHINK_DNS_DOT).withDefault<Boolean>(false)
+
+    // access secret for the custom Rethink DNS server (serverless-dns ACCESS_KEYS); do not log
+    var customRethinkDnsSecret by stringPref(CUSTOM_RETHINK_DNS_SECRET).withDefault<String>("")
 
     // default dns url
     var defaultDnsUrl by stringPref("default_dns_query").withDefault<String>(Constants.DEFAULT_DNS_LIST[1].url)

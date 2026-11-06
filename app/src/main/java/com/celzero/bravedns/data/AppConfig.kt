@@ -49,6 +49,7 @@ import com.celzero.bravedns.database.SmartDnsEndpointRepository
 import com.celzero.bravedns.service.EventLogger
 import com.celzero.bravedns.service.VpnController
 import com.celzero.bravedns.service.PersistentState
+import com.celzero.bravedns.service.RethinkServers
 import com.celzero.bravedns.service.TcpProxyHelper
 import com.celzero.bravedns.ui.bottomsheet.BlockFreeDnsModeBottomSheet
 import com.celzero.bravedns.util.Constants
@@ -587,7 +588,10 @@ internal constructor(
                 val endpoint = getRemoteRethinkEndpoint() ?: return
 
                 persistentState.setRemoteBlocklistCount(endpoint.blocklistCount)
-                postConnectedDnsName(endpoint.name, endpoint.url)
+                // the url actually dialled (custom server aware); a change here also makes
+                // the vpn re-add the rethink transports (DNS_CHANGE pref listener)
+                val cfg = RethinkServers.config(persistentState)
+                postConnectedDnsName(endpoint.name, RethinkServers.displayUrl(cfg, endpoint.url, withSecret = false))
             }
             DnsType.SYSTEM_DNS -> {
                 postConnectedDnsName(context.getString(R.string.network_dns))
@@ -632,6 +636,36 @@ internal constructor(
             "RethinkDNS endpoint switched to MAX, prev: ${persistentState.connectedDnsName}"
         )
     }
+
+    /**
+     * Points Rethink DNS at a self-hosted serverless-dns ([base] normalized, "" = official
+     * servers). Stored endpoint urls (and so the user's stamps) are unchanged; the vpn
+     * re-adds the rethink transports on the new host if Rethink DNS is in use.
+     */
+    suspend fun setCustomRethinkServer(base: String, useDot: Boolean, secret: String) {
+        val prev = persistentState.customRethinkDnsUrl
+        val prevDot = persistentState.customRethinkDnsDot
+        val prevSecret = persistentState.customRethinkDnsSecret
+        if (prev == base && prevDot == useDot && prevSecret == secret) return
+        // dot / secret changes are picked up by the vpn's pref listener; a url change through
+        // DNS_CHANGE (onDnsChange below), so write the url last
+        persistentState.customRethinkDnsDot = useDot
+        persistentState.customRethinkDnsSecret = secret
+        persistentState.customRethinkDnsUrl = base
+        if (isRethinkDnsConnected()) {
+            onDnsChange(DnsType.RETHINK_REMOTE)
+        }
+        logEvent(
+            EventType.DNS_SERVER_CHANGE,
+            "RethinkDNS server changed",
+            "server: ${base.ifEmpty { "default" }}, dot: $useDot, secret: ${secret.isNotEmpty()}, prev: ${prev.ifEmpty { "default" }}"
+        )
+    }
+
+    fun getRethinkServerConfig(): RethinkServers.Config = RethinkServers.config(persistentState)
+
+    fun rethinkDisplayUrl(storedUrl: String): String =
+        RethinkServers.displayUrl(RethinkServers.config(persistentState), storedUrl)
 
     suspend fun switchRethinkDnsToSky() {
         rethinkDnsEndpointRepository.switchToSky()
@@ -866,11 +900,8 @@ internal constructor(
 
     suspend fun getBlockFreeRethinkEndpoint(): String {
         // decide which blockfree endpoint to use
-        return if (getRemoteRethinkEndpoint()?.url?.contains(MAX_ENDPOINT) == true) {
-            Constants.BLOCK_FREE_DNS_MAX
-        } else {
-            Constants.BLOCK_FREE_DNS_SKY
-        }
+        val isMax = getRemoteRethinkEndpoint()?.url?.contains(MAX_ENDPOINT) == true
+        return RethinkServers.blockFreeUrl(RethinkServers.config(persistentState), isMax)
     }
 
     suspend fun getRethinkPlusEndpoint(): RethinkDnsEndpoint? {
