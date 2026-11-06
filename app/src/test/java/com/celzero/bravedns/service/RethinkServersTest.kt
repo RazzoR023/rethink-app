@@ -295,4 +295,45 @@ class RethinkServersTest {
         assertEquals("dns.example.com|8d680f4af81896c1894253976f617d0656c396d841b06204ca99f0a8e578a2a6",
             RethinkServers.accessKey("k3y9secretvalue1", "dns.example.com"))
     }
+
+    // ---- named paths (/rec, /sec, /pec, ...) stored by older migrations ----
+
+    @Test fun namedPath_defaultUnchanged() {
+        assertEquals("rec", RethinkServers.stampOf(def, "https://sky.rethinkdns.com/rec"))
+        assertEquals(Transport("https://max.rethinkdns.com/rec", false),
+            RethinkServers.transport(def, "https://max.rethinkdns.com/rec") { it })
+    }
+
+    // the server's extractStamps: "/rec:k" -> no stamp, no key; "/1:YAYBACABEDAgAA==:k" -> rec + key
+    @Test fun namedPath_customExpandsToStamp() {
+        assertEquals("1:YAYBACABEDAgAA==", RethinkServers.stampOf(keyed, "https://sky.rethinkdns.com/rec"))
+        assertEquals(Transport("https://dns.example.com/1:YAYBACABEDAgAA==:abc123", false),
+            RethinkServers.transport(keyed, "https://sky.rethinkdns.com/rec") { it })
+        assertEquals(Transport("https://dns.example.com/1:GMAB-ACgYVIAgA==:abc123", false),
+            RethinkServers.transport(keyed, "https://max.rethinkdns.com/pec") { it })
+        assertEquals(Transport("https://dns.example.com/1:EBx5AqvtyDcAKA==", false),
+            RethinkServers.transport(custom, "https://sky.rethinkdns.com/sec") { it })
+        // the base32 form (as GoVpnAdapter converts it) is used for DoT
+        assertEquals(Transport("tls://1-b32rec-abc123.dns.example.com", true),
+            RethinkServers.transport(keyedDot, "https://sky.rethinkdns.com/rec") {
+                if (it == "1:YAYBACABEDAgAA==") "1-b32rec" else it
+            })
+        assertEquals("https://dns.example.com/1:YAYBACABEDAgAA==:abc123",
+            RethinkServers.displayUrl(keyed, "https://sky.rethinkdns.com/rec"))
+        assertEquals("1:x", RethinkServers.expandNamedStamp("1:x"))
+        assertEquals("1:YAYBACABEDAgAA==", RethinkServers.expandNamedStamp("rec/"))
+    }
+
+    @Test fun otherStoredForms_custom() {
+        // stamp-less and block-free stored urls
+        assertEquals(Transport("https://dns.example.com/1::abc123", false),
+            RethinkServers.transport(keyed, "https://max.rethinkdns.com/") { it })
+        assertEquals(Transport("https://dns.example.com/1::abc123", false),
+            RethinkServers.transport(keyed, "https://max.rethinkdns.com") { it })
+        assertEquals(Transport("https://dns.example.com/1::abc123", false),
+            RethinkServers.transport(keyed, "https://sky.rethinkdns.com/dns-query") { it })
+        // legacy basic host with a base64 stamp
+        assertEquals(Transport("https://dns.example.com/1:IAAQAA==:abc123", false),
+            RethinkServers.transport(keyed, "https://basic.rethinkdns.com/1:IAAQAA==") { it })
+    }
 }

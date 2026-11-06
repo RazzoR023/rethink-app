@@ -271,8 +271,30 @@ object RethinkServers {
             url.contains(Constants.RETHINKDNS_DOMAIN) -> url.substringAfter(Constants.RETHINKDNS_DOMAIN)
             else -> return ""
         }
-        return stripSecret(if (rest.startsWith("/")) rest.substring(1) else rest)
+        val stamp = stripSecret(if (rest.startsWith("/")) rest.substring(1) else rest)
+        // official servers keep the named path as is (old behaviour); for a custom server it
+        // is expanded so an access secret can be appended (see NAMED_STAMPS)
+        return if (cfg.isCustom) expandNamedStamp(stamp) else stamp
     }
+
+    /**
+     * serverless-dns's named blocklist paths (rdns-util.js recBlockstamps), e.g. stored urls
+     * like https://sky.rethinkdns.com/rec. The server has no form combining a name with an
+     * access key ("/rec:k" parses as nothing, "/rec/1::k" as no blocklist), so for a custom
+     * server the name is replaced by its stamp and the key appended to that.
+     */
+    val NAMED_STAMPS: Map<String, String> = mapOf(
+        "rec" to "1:YAYBACABEDAgAA==",
+        "sec" to "1:EBx5AqvtyDcAKA==",
+        "pec" to "1:GMAB-ACgYVIAgA==",
+        "rs" to "1:cB55AqvtyTcgARAwIAAAKA==",
+        "prs" to "1:eN4B-ACgeQKr7ck3IAEQMCAAYXoAgA==",
+        "pr" to "1:eMYB-ACgAQAgARAwIABhUgCA",
+        "ps" to "1:GNwB-ACgeQKr7cg3YXoAgA==",
+    )
+
+    /** "rec" (or "rec/") -> its stamp; anything else unchanged. */
+    fun expandNamedStamp(stamp: String): String = NAMED_STAMPS[stamp.trimEnd('/')] ?: stamp
 
     /**
      * The URL to dial for a stored Rethink URL, or null if [url] is not a Rethink URL.
