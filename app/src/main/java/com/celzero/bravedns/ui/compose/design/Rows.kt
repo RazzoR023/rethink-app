@@ -178,8 +178,10 @@ fun SwitchRow(
         modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
         title, supportingText, icon, enabled,
     ) {
-        // the row handles input and semantics; the switch only draws the state
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        // the row handles input and semantics; the switch only draws the state. The row
+        // already fades when disabled; M3's own disabled colours on top of that made a
+        // disabled-but-on switch look off on AMOLED, so the switch always draws as enabled.
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

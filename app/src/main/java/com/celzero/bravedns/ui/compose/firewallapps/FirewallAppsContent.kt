@@ -33,6 +33,7 @@ import com.celzero.bravedns.ui.compose.utilities.utilityTextStyle
 import com.celzero.bravedns.ui.compose.utilities.utilityDimensionSp
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.celzero.bravedns.R
@@ -173,9 +174,11 @@ import kotlinx.coroutines.launch
                 Column(Modifier.weight(1f).padding(start = 12.dp)
                     .clickable(enabled = b.firewallAppTextLl.isEnabled) { b.firewallAppTextLl.performClick() }) {
                     Text(b.firewallAppLabelTv.text.toString(),
-                        Modifier.alpha(b.firewallAppLabelTv.alpha).basicMarquee().testTag("firewall_app_title"),
+                        Modifier.alpha(b.firewallAppLabelTv.alpha).testTag("firewall_app_title"),
                         style = MaterialTheme.typography.titleMedium, color = themeColor(R.attr.colorOnSurface),
-                        maxLines = 1, textDecoration = if (b.strikeThrough) TextDecoration.LineThrough else null)
+                        // ellipsis, not a marquee: a list full of scrolling names caught mid-loop
+                        // showed the end of a name before its start
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = if (b.strikeThrough) TextDecoration.LineThrough else null)
                     val secondaryStyle = utilityTextStyle(
                         size = utilityDimensionSp(LocalContext.current, R.dimen.small_font_subheading_text))
                     Text(b.firewallAppToggleOther.text.toString(), style = secondaryStyle,

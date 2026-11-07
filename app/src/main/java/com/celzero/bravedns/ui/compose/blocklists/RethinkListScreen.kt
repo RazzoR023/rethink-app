@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
 package com.celzero.bravedns.ui.compose.blocklists
 
 import com.celzero.bravedns.ui.compose.controls.*
@@ -6,6 +7,9 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -51,7 +55,21 @@ import kotlinx.coroutines.flow.Flow
     Surface(color = themeColor(R.attr.background)) {
         // The standalone activity delegates insets to this screen; the bottom sheet
         // already owns its window insets and must not receive another full-screen pad.
-        LazyColumn(Modifier.fillMaxWidth().then(if (state != null) Modifier.safeDrawingPadding() else Modifier)) {
+        Column(Modifier.fillMaxWidth().then(if (state != null) Modifier.safeDrawingPadding() else Modifier)) {
+        if (state != null) {
+            val back = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current
+            TopAppBar(
+                title = { Text(stringResource(R.string.dc_rethink_dns), Modifier.semantics { heading() }, maxLines = 1) },
+                navigationIcon = {
+                    IconButton({ back?.onBackPressedDispatcher?.onBackPressed() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.rules_navigate_up))
+                    }
+                },
+                windowInsets = WindowInsets(0),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = themeColor(R.attr.background)),
+            )
+        }
+        LazyColumn(Modifier.fillMaxWidth()) {
             if (configure != null) item {
                 Text("RethinkDNS List", Modifier.padding(16.dp).semantics { heading() }, fontSize = 20.sp, color = themeColor(R.attr.primaryLightColorText))
                 Text("Click here to configure blocklists.", Modifier.fillMaxWidth().clickable(onClick = configure).padding(16.dp), fontSize = 14.sp, color = themeColor(R.attr.primaryTextColor))
@@ -79,6 +97,7 @@ import kotlinx.coroutines.flow.Flow
                 }
             }
         }
+        }
     }
     presenter.metadata?.let { endpoint ->
         NoDimDialogWindow(onDismissRequest = { presenter.metadata = null }, properties = DialogProperties()) {
@@ -102,10 +121,10 @@ import kotlinx.coroutines.flow.Flow
 }
 @Composable private fun RethinkChoice(control: DnsControl, label: Int, key: String) {
     // Original RadioButton suppresses android:button and uses drawableBottom with 5dp spacing.
-    Column(Modifier.testTag("rethink-$key").clickable(role = Role.RadioButton) { control.isChecked = true; control.onClick() }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    // M3 RadioButton: the original drawable rendered the checked state as a bare ring (no dot)
+    Column(Modifier.testTag("rethink-$key").selectable(control.isChecked, role = Role.RadioButton) { control.isChecked = true; control.onClick() }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(stringResource(label), color = themeColor(R.attr.primaryTextColor))
-        Spacer(Modifier.height(5.dp))
-        OriginalRadioButton("fragment_rethink_list:radio_$key", control.isChecked, null, indicatorOnly = true)
+        RadioButton(selected = control.isChecked, onClick = null)
     }
 }
 @Composable private fun RethinkEndpointRow(endpoint: RethinkDnsEndpoint, presenter: RethinkEndpointPresenter, spacing: Dp) {
