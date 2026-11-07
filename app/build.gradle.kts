@@ -220,6 +220,13 @@ android {
     }
 
     buildTypes {
+        // opt-in side-by-side install: ./gradlew ... -PdebugAppIdSuffix=.ui
+        getByName("debug") {
+            providers.gradleProperty("debugAppIdSuffix").orNull?.takeIf { it.isNotBlank() }?.let { s ->
+                applicationIdSuffix = s
+                resValue("string", "app_name", "Rethink ${s.trimStart('.')}")
+            }
+        }
         release {
             // AGP 9.3 DSL: enables both code and resource optimization and
             // includes the default Android keep rules (equivalent to

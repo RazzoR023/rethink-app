@@ -81,11 +81,16 @@ import kotlin.math.max
 /** Native content can be tested with presentation-only callbacks and a plain Application. */
 @Composable
 fun HomeContent(b: HomePresentation) {
-    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val config = LocalConfiguration.current
+    val wide = config.screenWidthDp >= 600
+    // On short screens (phone landscape) pinned controls plus the bottom navigation leave
+    // only a sliver for the cards, so the controls scroll with them, right under the status.
+    val short = config.screenHeightDp < 480
     // The Activity shell reserves the measured bottom-navigation viewport.
     Column(Modifier.fillMaxSize().background(themeColor(R.attr.background)), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             ProtectionRow(b)
+            if (short) Controls(b, wide, Modifier.padding(top = 8.dp))
             if (wide) {
                 WideHomeCards(b)
             } else {
@@ -101,7 +106,7 @@ fun HomeContent(b: HomePresentation) {
                 AppsCard(b, false, Modifier.fillMaxWidth().padding(horizontal = 2.dp))
             }
         }
-        Controls(b, wide)
+        if (!short) Controls(b, wide)
     }
     HomeDialogs(b)
 }
@@ -480,8 +485,8 @@ private fun HomeHistogramCanvas(histogram: HomeHistogram) {
 }
 
 @Composable
-private fun Controls(b: HomePresentation, wide: Boolean) {
-    Row(Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 20.dp).heightIn(min = 64.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun Controls(b: HomePresentation, wide: Boolean, modifier: Modifier = Modifier) {
+    Row(modifier.widthIn(max = 720.dp).fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 20.dp).heightIn(min = 64.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         ControlIcon(b.homeFragmentPauseIcon, R.drawable.ic_pause, stringResource(R.string.notification_action_pause_vpn), wide)
         val node = b.fhsDnsOnOffBtn
         val shape = RoundedCornerShape(28.dp)
