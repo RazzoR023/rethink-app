@@ -167,3 +167,15 @@ fun wgAnnotatedText(value: CharSequence?): AnnotatedString {
         keyboardOptions = KeyboardOptions(keyboardType = if (node.isPassword) KeyboardType.Password else keyboard, autoCorrectEnabled = !node.noSuggestions, imeAction = if (onDone != null) ImeAction.Done else if (node.imeNext) ImeAction.Next else ImeAction.Default),
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }))
 }
+
+/** Segmented toggle button of the ported screens (WgStatsContent). */
+@Composable fun WgToggle(node: WgControlState, modifier: Modifier = Modifier, source: String, selected: Boolean = node.isChecked) {
+    if (!node.isVisible) return
+    com.celzero.bravedns.ui.compose.controls.OriginalButton(source, { node.performClick() }, modifier,
+        enabled = node.isEnabled && node.isClickable, selected = selected,
+        contentColor = node.textColor?.let(::Color), backgroundTint = node.backgroundTintList,
+        segmentCount = if (source.startsWith("activity_wireguard_main:")) 2 else 3,
+        segmentIndex = when (source.substringAfter(':')) { "one_wg_toggle_btn", "tb_recent_toggle_btn" -> 0; "wg_general_toggle_btn", "tb_daily_toggle_btn" -> 1; else -> 2 }) {
+        Text(node.text.toString())
+    }
+}

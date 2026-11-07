@@ -16,34 +16,11 @@
 package com.celzero.bravedns.viewmodel
 
 import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.switchMap
-import androidx.lifecycle.viewModelScope
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
-import androidx.paging.cachedIn
-import androidx.paging.liveData
 import com.celzero.bravedns.database.WgConfigFiles
 import com.celzero.bravedns.database.WgConfigFilesDAO
-import com.celzero.bravedns.util.Constants
 
 class WgConfigViewModel(private val wgConfigFilesDAO: WgConfigFilesDAO) : ViewModel() {
-
-    private val list: MutableLiveData<String> = MutableLiveData()
-
-    init {
-        list.postValue("")
-    }
-
-    var interfaces =
-        list.switchMap { _ ->
-            Pager(PagingConfig(Constants.LIVEDATA_PAGE_SIZE)) {
-                    wgConfigFilesDAO.getWgConfigsLiveData()
-                }
-                .liveData
-                .cachedIn(viewModelScope)
-        }
 
     fun insert(wgConfigFiles: WgConfigFiles) {
         wgConfigFilesDAO.insert(wgConfigFiles)

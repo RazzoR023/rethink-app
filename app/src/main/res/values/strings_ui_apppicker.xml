@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Per-proxy app picker ("Apps via <proxy>", WgIncludeAppsActivity). -->
+<resources>
+    <string name="app_picker_title">Apps via %1$s</string>
+    <string name="app_picker_selected_count">%1$d selected</string>
+    <string name="app_picker_refresh">Refresh app list</string>
+    <string name="app_picker_search_hint">Search apps</string>
+    <string name="app_picker_search_clear">Clear search</string>
+    <string name="app_picker_select_all">Select all</string>
+    <string name="app_picker_unselect_all">Unselect all</string>
+    <string name="app_picker_select_all_title">Route all apps via %1$s?</string>
+    <string name="app_picker_select_all_body">Every app that isn\'t on another proxy will use %1$s. Apps already routed via a different proxy stay there.</string>
+    <string name="app_picker_unselect_all_title">Remove all apps from %1$s?</string>
+    <string name="app_picker_unselect_all_body">No app will use %1$s until you add apps again.</string>
+    <string name="app_picker_shared_uid_body">These apps share one user ID, so they are routed together:\n\n%1$s</string>
+    <string name="app_picker_no_internet">No internet permission</string>
+    <string name="app_picker_empty_search_title">No matching apps</string>
+    <string name="app_picker_empty_search_body">No app name contains \"%1$s\".</string>
+    <string name="app_picker_empty_selected_title">No apps selected</string>
+    <string name="app_picker_empty_selected_body">Tick apps under All or Unselected to route them via %1$s.</string>
+    <string name="app_picker_empty_unselected_title">Every app is selected</string>
+    <string name="app_picker_empty_unselected_body">All apps that can use %1$s already do.</string>
+    <string name="app_picker_empty_all_title">No apps found</string>
+    <string name="app_picker_empty_all_body">Refresh the app list to pick up newly installed apps.</string>
+</resources>

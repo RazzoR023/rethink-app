@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- WireGuard config list (WgMainActivity / WgListScreen) -->
+<resources>
+    <string name="wg_list_mode_simple_desc" translatable="true">One WireGuard routes all apps and DNS. Turning one on stops the others.</string>
+    <string name="wg_list_mode_advanced_desc" translatable="true">Run several WireGuards at once and pick which apps each one routes.</string>
+    <string name="wg_list_empty_title" translatable="true">No WireGuard configs</string>
+    <string name="wg_list_add" translatable="true">Add</string>
+    <string name="wg_list_add_title" translatable="true">Add a WireGuard config</string>
+    <string name="wg_list_add_import" translatable="true">Import file</string>
+    <string name="wg_list_add_import_desc" translatable="true">A .conf or .zip file, or an image of a QR code</string>
+    <string name="wg_list_add_qr" translatable="true">Scan QR code</string>
+    <string name="wg_list_add_qr_desc" translatable="true">Use the camera</string>
+    <string name="wg_list_add_create" translatable="true">Create new</string>
+    <string name="wg_list_add_create_desc" translatable="true">Enter keys and peers by hand</string>
+    <string name="wg_list_delete_all" translatable="true">Delete all configs</string>
+    <string name="wg_list_vpn_off" translatable="true">Rethink is off. Start it to turn WireGuard configs on.</string>
+    <string name="wg_list_toggle_cd" translatable="true">Use %1$s</string>
+    <string name="wg_list_apps_all" translatable="true">All apps</string>
+    <string name="wg_list_apps_remaining" translatable="true">Remaining apps</string>
+    <string name="wg_list_apps_none" translatable="true">No apps</string>
+    <string name="wg_list_tag_always_on" translatable="true">Always-on</string>
+    <string name="wg_list_tag_lockdown" translatable="true">Lockdown</string>
+    <string name="wg_list_tag_mobile_only" translatable="true">Mobile only</string>
+    <string name="wg_list_tag_ssid" translatable="true">Wi-Fi rules</string>
+    <string name="wg_list_tag_relayed_via" translatable="true">Relayed via %1$s</string>
+    <string name="wg_list_tag_relays_for" translatable="true">Relays %1$s</string>
+</resources>

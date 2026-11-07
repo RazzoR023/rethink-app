@@ -33,53 +33,6 @@ import com.celzero.bravedns.R
     }
 }
 
-@Composable fun WgConfigRow(b: WgConfigRowState) {
-    WgCard(b.interfaceDetailCard, contentPadding = PaddingValues(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { WgText(b.interfaceFlagText); WgText(b.interfaceNameText, Modifier.weight(1f)); WgText(b.interfaceIdText) }
-                WgChips(b.protocolInfoChipGroup, "list_item_wg_general_interface", b.protocolInfoChipIpv4, b.protocolInfoChipIpv6, b.chipSplitTunnel, b.chipAmnezia, b.chipHopSrc, b.chipHopping, b.chipProperties)
-                WgText(b.interfaceStatus)
-                WgText(b.interfaceAppsCount)
-                if (b.interfaceActiveLayout.isVisible) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    WgText(b.interfaceActiveUptime, Modifier.weight(1f).padding(start = 3.dp, end = 5.dp).padding(5.dp))
-                    WgText(b.interfaceActiveRxTx, Modifier.padding(5.dp))
-                }
-            }
-            WgCheck(b.interfaceSwitch, b.interfaceNameText.text.toString(), switch = true, compoundSource = "list_item_wg_general_interface:interface_switch")
-        }
-    }
-}
-
-@Composable fun WgOneConfigRow(b: WgOneConfigRowState) {
-    WgCard(b.interfaceDetailCard, contentPadding = PaddingValues(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { WgText(b.interfaceFlagText); WgText(b.interfaceNameText, Modifier.weight(1f)); WgText(b.interfaceIdText) }
-                WgChips(b.protocolInfoChipGroup, "list_item_wg_one_interface", b.protocolInfoChipIpv4, b.protocolInfoChipIpv6, b.chipSplitTunnel)
-                WgText(b.interfaceStatus)
-                WgText(b.interfaceAppsCount)
-                if (b.interfaceActiveLayout.isVisible) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    WgText(b.interfaceActiveUptime, Modifier.weight(1f).padding(start = 3.dp, end = 5.dp).padding(5.dp))
-                    WgText(b.interfaceActiveRxTx, Modifier.padding(5.dp))
-                }
-            }
-            WgCheck(b.oneWgCheck, b.interfaceNameText.text.toString(), compoundSource = "list_item_wg_one_interface:one_wg_check")
-        }
-    }
-}
-
-@Composable fun WgAppRow(b: WgAppRowState) {
-    WgCard(b.wgIncludeCard, Modifier.padding(horizontal = 6.dp),
-        contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 6.dp, bottom = 10.dp)) {
-        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            WgIcon(b.wgIncludeAppListApkIconIv)
-            Column(Modifier.weight(1f)) { WgText(b.wgIncludeAppListApkLabelTv); WgText(b.wgIncludeAppAppDescTv) }
-            WgCheck(b.wgIncludeAppListCheckbox, b.wgIncludeAppListApkLabelTv.text.toString(), compoundSource = "list_item_wg_include_apps:wg_include_app_list_checkbox")
-        }
-    }
-}
-
 @Composable fun WgHopRow(b: WgHopRowState) {
     WgCard(b.wgHopListCard, contentPadding = PaddingValues(start = 5.dp, top = 7.dp, bottom = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
