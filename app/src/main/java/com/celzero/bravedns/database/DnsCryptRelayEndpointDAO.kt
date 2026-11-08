@@ -35,12 +35,12 @@ interface DnsCryptRelayEndpointDAO {
     @Delete fun delete(dnsCryptRelayEndpoint: DnsCryptRelayEndpoint)
 
     @Transaction
-    @Query("select * from DNSCryptRelayEndpoint order by isSelected desc")
+    @Query("select * from DNSCryptRelayEndpoint order by id asc")
     fun getDnsCryptRelayEndpointLiveData(): PagingSource<Int, DnsCryptRelayEndpoint>
 
     @Transaction
     @Query(
-        "select * from DNSCryptRelayEndpoint where dnsCryptRelayURL like :query or dnsCryptRelayName like :query order by isSelected desc"
+        "select * from DNSCryptRelayEndpoint where dnsCryptRelayURL like :query or dnsCryptRelayName like :query order by id asc"
     )
     fun getDnsCryptRelayEndpointLiveDataByName(
         query: String

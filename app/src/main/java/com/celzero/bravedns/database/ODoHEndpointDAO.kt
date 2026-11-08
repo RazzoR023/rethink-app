@@ -37,7 +37,7 @@ interface ODoHEndpointDAO {
     @Delete fun delete(endpoint: ODoHEndpoint)
 
     @Transaction
-    @Query("select * from ODoHEndpoint order by isSelected desc")
+    @Query("select * from ODoHEndpoint order by id asc")
     fun getODoHEndpointLiveData(): PagingSource<Int, ODoHEndpoint>
 
     @Query("select * from ODoHEndpoint order by isSelected desc")
@@ -45,7 +45,7 @@ interface ODoHEndpointDAO {
 
     @Transaction
     @Query(
-        "select * from ODoHEndpoint where resolver like :query or name like :query order by isSelected desc"
+        "select * from ODoHEndpoint where resolver like :query or name like :query order by id asc"
     )
     fun getODoHEndpointLiveDataByName(query: String): PagingSource<Int, ODoHEndpoint>
 

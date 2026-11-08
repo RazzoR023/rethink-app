@@ -34,10 +34,10 @@ interface ProxyEndpointDAO {
 
     @Delete fun delete(proxyEndpoint: ProxyEndpoint)
 
-    @Query("select * from ProxyEndpoint where proxyMode = 1 order by isSelected desc")
+    @Query("select * from ProxyEndpoint where proxyMode = 1 order by id asc")
     fun getDNSProxyEndpointLiveData(): PagingSource<Int, ProxyEndpoint>
 
-    @Query("select * from ProxyEndpoint where proxyName like :query order by isSelected desc")
+    @Query("select * from ProxyEndpoint where proxyName like :query order by id asc")
     fun getDNSProxyEndpointLiveDataByType(query: String): PagingSource<Int, ProxyEndpoint>
 
     @Query("update ProxyEndpoint set isSelected = 0 where isSelected = 1")

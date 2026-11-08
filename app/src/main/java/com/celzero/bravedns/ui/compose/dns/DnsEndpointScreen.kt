@@ -2,9 +2,6 @@
 package com.celzero.bravedns.ui.compose.dns
 
 import com.celzero.bravedns.ui.compose.controls.*
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,10 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -146,7 +139,7 @@ private class DnsEndpointSourceIdentity(private val endpoint: Any) {
             IconButton(item.onInfo, Modifier.testTag("dns_endpoint_info_${item.id}")) {
                 Icon(painterResource(if (item.deletable) R.drawable.ic_fab_uninstall else R.drawable.ic_info), stringResource(if (item.deletable) R.string.lbl_delete else R.string.bsct_meta_info), Modifier.size(24.dp), tint = themeColor(R.attr.primaryTextColor).copy(alpha = .55f))
             }
-            DnsSelectionIndicator(item.selected, Modifier.padding(start = 4.dp, end = 12.dp))
+            DnsSelectionIndicator(item.selected, item.relay, Modifier.padding(start = 4.dp, end = 8.dp))
         }
     }
 }
@@ -161,19 +154,14 @@ private class DnsEndpointSourceIdentity(private val endpoint: Any) {
     }
 }
 
-@Composable private fun DnsSelectionIndicator(selected: Boolean, modifier: Modifier) {
-    val progress by animateFloatAsState(if (selected) 1f else 0f, tween(180), label = "DNS selection")
-    val primary = themeColor(R.attr.primaryTextColor)
-    val accent = themeColor(R.attr.accentGood)
-    val knob = themeColor(R.attr.invertedPrimaryTextColor)
-    Canvas(modifier.size(32.dp, 18.dp)) {
-        drawCircle(primary.copy(alpha = 1f - progress), 8.dp.toPx(), style = Stroke(2.dp.toPx()))
-        val scale = .6f + .4f * progress
-        val width = size.width * scale
-        val height = 16.dp.toPx() * scale
-        drawRoundRect(accent.copy(alpha = progress), Offset((size.width - width) / 2, (size.height - height) / 2), Size(width, height), CornerRadius(height / 2))
-        drawCircle(knob.copy(alpha = progress), 6.dp.toPx() * scale, Offset(size.width / 2 + 8.dp.toPx() * scale, size.height / 2))
-    }
+/**
+ * Decorative: the whole row is the click target and carries the semantics. Single-choice lists
+ * get a radio; relays (any number can be on) get a checkbox. Replaces a custom circle that
+ * morphed into a switch when selected, which read as a toggle in a single-choice list.
+ */
+@Composable private fun DnsSelectionIndicator(selected: Boolean, relay: Boolean, modifier: Modifier) {
+    if (relay) Checkbox(checked = selected, onCheckedChange = null, modifier = modifier)
+    else RadioButton(selected = selected, onClick = null, modifier = modifier)
 }
 
 @Composable internal fun <T: Any> DnsRelaysDialog(source: LiveData<PagingData<T>>, row: (T) -> DnsEndpointRowState, noDim: Boolean, onDismiss: () -> Unit) {

@@ -27,7 +27,7 @@ interface SmartDnsEndpointDAO {
     @Query("SELECT * FROM SmartDnsEndpoint order by isSelected desc")
     suspend fun getSmartDnsEndpoints(): List<SmartDnsEndpoint>
 
-    @Query("SELECT * FROM SmartDnsEndpoint order by isSelected desc")
+    @Query("SELECT * FROM SmartDnsEndpoint order by id asc")
     fun getSmartDnsEndpointsLiveData(): LiveData<List<SmartDnsEndpoint>>
 
     @Query("SELECT * FROM SmartDnsEndpoint WHERE isSelected = 1 LIMIT 1")

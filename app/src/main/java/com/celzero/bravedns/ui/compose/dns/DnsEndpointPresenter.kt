@@ -60,7 +60,7 @@ internal class DnsEndpointPresenter(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     fun doh(e: DoHEndpoint) = row(e.id, secureName(e.dohName, e.isSecure), e.isSelected, e.isDeletable(), e.dohURL,
-        select = { e.isSelected = true; appConfig.handleDoHChanges(e) },
+        select = { appConfig.handleDoHChanges(e.withSelected(true)) },
         delete = { appConfig.deleteDohEndpoint(e.id) },
         deleteTitle = R.string.doh_custom_url_remove_dialog_title,
         deleteMessage = R.string.doh_custom_url_remove_dialog_message,
@@ -73,7 +73,7 @@ internal class DnsEndpointPresenter(
         })
 
     fun dot(e: DoTEndpoint) = row(e.id, secureName(e.name, e.isSecure), e.isSelected, e.isDeletable(), e.url,
-        select = { e.isSelected = true; appConfig.handleDoTChanges(e) },
+        select = { appConfig.handleDoTChanges(e.withSelected(true)) },
         delete = { appConfig.deleteDoTEndpoint(e.id) },
         deleteTitle = R.string.dot_custom_url_remove_dialog_title,
         deleteMessage = R.string.dot_custom_url_remove_dialog_message,
@@ -81,7 +81,7 @@ internal class DnsEndpointPresenter(
         info = { metadata(e.name, e.url + "\n\n" + dnsDesc(e.desc), e.url, noDim = true) })
 
     fun odoh(e: ODoHEndpoint) = row(e.id, e.name, e.isSelected, e.isDeletable(), e.resolver,
-        select = { e.isSelected = true; appConfig.handleODoHChanges(e) },
+        select = { appConfig.handleODoHChanges(e.withSelected(true)) },
         delete = { appConfig.deleteODoHEndpoint(e.id) },
         deleteTitle = R.string.dot_custom_url_remove_dialog_title,
         deleteMessage = R.string.dot_custom_url_remove_dialog_message,
@@ -89,7 +89,7 @@ internal class DnsEndpointPresenter(
         info = { metadata(e.name, e.proxy + "\n\n" + e.resolver + "\n\n" + dnsDesc(e.desc), e.resolver) })
 
     fun crypt(e: DnsCryptEndpoint) = row(e.id, e.dnsCryptName, e.isSelected, e.isDeletable(), e.dnsCryptURL,
-        select = { e.isSelected = true; appConfig.handleDnscryptChanges(e) },
+        select = { appConfig.handleDnscryptChanges(e.withSelected(true)) },
         delete = { appConfig.deleteDnscryptEndpoint(e.id) },
         deleteTitle = R.string.dns_crypt_custom_url_remove_dialog_title,
         deleteMessage = R.string.dns_crypt_url_remove_dialog_message,
@@ -102,8 +102,7 @@ internal class DnsEndpointPresenter(
             if (selected && !appConfig.isDnscryptRelaySelectable()) {
                 ui { toast(R.string.dns_crypt_relay_error_toast, Toast.LENGTH_LONG) }
             } else {
-                e.isSelected = selected
-                appConfig.handleDnsrelayChanges(e)
+                appConfig.handleDnsrelayChanges(e.withSelected(selected))
             }
         },
         delete = { appConfig.deleteDnscryptRelayEndpoint(e.id) },
@@ -125,8 +124,7 @@ internal class DnsEndpointPresenter(
                         .setCancelable(true).setPositiveButton(R.string.dns_info_positive) { dialog, _ -> dialog.dismiss() }.show()
                 }
             } else {
-                e.isSelected = true
-                appConfig.handleDnsProxyChanges(e)
+                appConfig.handleDnsProxyChanges(e.withSelected(true))
             }
         },
         delete = { appConfig.deleteDnsProxyEndpoint(e.id) },
@@ -212,3 +210,20 @@ internal class DnsEndpointPresenter(
         if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) block()
     }
 }
+
+// Select saves a copy and never flips the flag on the entity the list is showing. With the
+// displayed object already flipped, the refreshed page equals the old one (endpoint equals()
+// compares isSelected), Compose sees an equal snapshot and skips the redraw: a pick in a new
+// category (no previously-selected row in this list to change) stayed unticked until reopened.
+private fun DoHEndpoint.withSelected(selected: Boolean) =
+    DoHEndpoint(id, dohName, dohURL, dohIp, dohExplanation, selected, isCustom, isSecure, modifiedDataTime, latency)
+private fun DoTEndpoint.withSelected(selected: Boolean) =
+    DoTEndpoint(id, name, url, desc, selected, isCustom, isSecure, modifiedDataTime, latency)
+private fun ODoHEndpoint.withSelected(selected: Boolean) =
+    ODoHEndpoint(id, name, proxy, resolver, proxyIps, desc, selected, isCustom, modifiedDataTime, latency)
+private fun DnsCryptEndpoint.withSelected(selected: Boolean) =
+    DnsCryptEndpoint(id, dnsCryptName, dnsCryptURL, dnsCryptExplanation, selected, isCustom, modifiedDataTime, latency)
+private fun DnsCryptRelayEndpoint.withSelected(selected: Boolean) =
+    DnsCryptRelayEndpoint(id, dnsCryptRelayName, dnsCryptRelayURL, dnsCryptRelayExplanation, selected, isCustom, modifiedDataTime, latency)
+private fun DnsProxyEndpoint.withSelected(selected: Boolean) =
+    DnsProxyEndpoint(id, proxyName, proxyType, proxyAppName, proxyIP, proxyPort, selected, isCustom, modifiedDataTime, latency)

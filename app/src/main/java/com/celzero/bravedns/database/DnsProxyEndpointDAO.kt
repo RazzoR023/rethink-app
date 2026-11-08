@@ -36,10 +36,10 @@ interface DnsProxyEndpointDAO {
 
     @Delete fun delete(dnsProxyEndpoint: DnsProxyEndpoint)
 
-    @Query("select * from DNSProxyEndpoint order by isSelected desc")
+    @Query("select * from DNSProxyEndpoint order by id asc")
     fun getDnsProxyEndpointLiveData(): PagingSource<Int, DnsProxyEndpoint>
 
-    @Query("select * from DNSProxyEndpoint where proxyName like :query order by isSelected desc")
+    @Query("select * from DNSProxyEndpoint where proxyName like :query order by id asc")
     fun getDnsProxyEndpointLiveDataByType(query: String): PagingSource<Int, DnsProxyEndpoint>
 
     @Query("delete from DNSProxyEndpoint where modifiedDataTime < :date")

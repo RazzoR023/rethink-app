@@ -169,7 +169,10 @@ internal var SemanticsPropertyReceiver.originalCompoundSource by OriginalCompoun
                 if (drawable == null) return
                 redraw.configure {
                     DrawableCompat.setLayoutDirection(drawable, if (direction == LayoutDirection.Rtl) 1 else 0)
-                    drawable.state = states
+                    // Show the end frame of state transitions: the radio's checked dot is an
+                    // AnimatedStateListDrawable transition that, painted onto a Compose canvas,
+                    // never advances, leaving a tinted ring with no dot.
+                    if (drawable.setState(states)) drawable.jumpToCurrentState()
                     // Source drawables keep their own tint when no explicit per-node/controller tint exists.
                     if (tint != null) drawable.setTintList(tint)
                     drawable.setBounds(dx.toInt(), dy.toInt(), (dx + w).toInt(), (dy + h).toInt())
