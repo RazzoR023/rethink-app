@@ -170,6 +170,12 @@ class GoVpnAdapter : KoinComponent {
         setRDNS()
         setPlusStrategy()
         addTransport()
+        // must precede adding wireguards: firestack reads this flag once, when each wg netstack
+        // is built (HandleLocal = !experimental). A wg added before it is built with
+        // HandleLocal=true; the flag's callback then turns on spoofing + promiscuous mode, and
+        // that stack routes every destination back to itself, so the tunnel stays dead until
+        // the config is toggled (re-created) by hand.
+        setExperimentalWireGuardSettings()
         setWireguardTunnelModeIfNeeded(opts.tunProxyMode)
         setSocks5TunnelModeIfNeeded(opts.tunProxyMode)
         setHttpProxyIfNeeded(opts.tunProxyMode)
@@ -179,7 +185,6 @@ class GoVpnAdapter : KoinComponent {
         setDialStrategy()
         setTransparency()
         undelegatedDomains()
-        setExperimentalWireGuardSettings()
         setAutoDialsParallel()
         setAutoMode()
         setFloodWgMode()
