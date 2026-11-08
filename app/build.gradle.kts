@@ -226,6 +226,14 @@ android {
                 applicationIdSuffix = s
                 resValue("string", "app_name", "Rethink ${s.trimStart('.')}")
             }
+            // opt-in: ./gradlew ... -PdebugNotDebuggable=true. On devices with JIT off (e.g.
+            // GrapheneOS), a debuggable app runs entirely in ART's slowest interpreter and
+            // ignores AOT code, so it is useless for judging UI speed. Same debug signature,
+            // so it installs over the debuggable build and keeps its data.
+            if (providers.gradleProperty("debugNotDebuggable").orNull == "true") {
+                isDebuggable = false
+                isJniDebuggable = false
+            }
         }
         release {
             // AGP 9.3 DSL: enables both code and resource optimization and

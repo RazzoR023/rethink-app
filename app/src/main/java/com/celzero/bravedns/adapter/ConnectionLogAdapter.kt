@@ -253,14 +253,16 @@ class ConnectionLogAdapter(private val context: Context) : LogPagingPresenter<Me
                     else -> log.appName
                 }
 
+                // Load the icon here, off the main thread: a cache miss asks PackageManager
+                // for the icon and rescales it, which stalled scroll frames.
+                val icon = if (apps.isEmpty() || pkgName.isEmpty() || pkgName == EMPTY_PACKAGE_NAME) {
+                    getDefaultIcon(context)
+                } else {
+                    getIcon(context, apps[0])
+                }
                 withContext(Dispatchers.Main.immediate) {
                     if (!isActive) return@withContext
                     b.connectionAppName.text = appName
-                    val icon = if (apps.isEmpty() || pkgName.isEmpty() || pkgName == EMPTY_PACKAGE_NAME) {
-                        getDefaultIcon(context)
-                    } else {
-                        getIcon(context, apps[0])
-                    }
                     b.connectionAppIcon.setImageDrawable(icon)
                 }
             }

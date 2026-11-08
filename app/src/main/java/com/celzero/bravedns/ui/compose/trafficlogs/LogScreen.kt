@@ -120,21 +120,31 @@ data class LogFilterChip(val key: String, val label: String, val selected: Boole
     val strategy = remember(prefetch) { if (prefetch) LazyListPrefetchStrategy() else NoLogPrefetch }
     val list = rememberLazyListState(prefetchStrategy = strategy)
     val context = LocalContext.current
-    var header by remember { mutableStateOf("") }
-    var updated by remember { mutableLongStateOf(0L) }
-    var headerVisible by remember { mutableStateOf(false) }
-    var previouslyScrolling by remember { mutableStateOf(false) }
-    val firstTimestamp = presenter.peek(list.firstVisibleItemIndex)?.let(timestamp)
-    LaunchedEffect(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset, firstTimestamp) {
-        val now = System.currentTimeMillis()
-        if (showHeader && now - updated >= headerThrottleMillis && firstTimestamp != null) {
-            updated = now; header = formatToRelativeTime(context, firstTimestamp); headerVisible = true
-        }
+    val header = remember { mutableStateOf("") }
+    val headerVisible = remember { mutableStateOf(false) }
+    // Scroll position is observed in a flow, not read during composition: reading it here
+    // recomposed this whole list (and restarted an effect) on every scroll frame.
+    if (showHeader) LaunchedEffect(list, presenter) {
+        var updated = 0L
+        var shown: Long? = null
+        snapshotFlow { presenter.peek(list.firstVisibleItemIndex)?.let(timestamp) to list.firstVisibleItemScrollOffset }
+            .collect { (firstTimestamp, _) ->
+                val now = System.currentTimeMillis()
+                if (firstTimestamp != null && now - updated >= headerThrottleMillis) {
+                    updated = now
+                    // formatToRelativeTime is not free; skip it while the top row is unchanged.
+                    if (firstTimestamp != shown) { shown = firstTimestamp; header.value = formatToRelativeTime(context, firstTimestamp) }
+                    headerVisible.value = true
+                }
+            }
     }
-    LaunchedEffect(list.isScrollInProgress) {
+    LaunchedEffect(list) {
         // RecyclerView hides only on an actual transition to IDLE, not on first layout.
-        if (previouslyScrolling && !list.isScrollInProgress) headerVisible = false
-        previouslyScrolling = list.isScrollInProgress
+        var previouslyScrolling = false
+        snapshotFlow { list.isScrollInProgress }.collect { scrolling ->
+            if (previouslyScrolling && !scrolling) headerVisible.value = false
+            previouslyScrolling = scrolling
+        }
     }
     Box(modifier.fillMaxWidth()) {
         if (state.showList) LazyColumn(Modifier.fillMaxSize().testTag("log-list"), state = list, contentPadding = PaddingValues(bottom = 10.dp)) {
@@ -143,8 +153,13 @@ data class LogFilterChip(val key: String, val label: String, val selected: Boole
         state.message?.let { Text(it, Modifier.align(Alignment.TopCenter).padding(24.dp), color = themeColor(R.attr.primaryTextColor)) }
         if (!state.showList) empty?.invoke()
         if (state.showList && fastScroll) LogFastScroller(list, Modifier.align(Alignment.CenterEnd), thumbColorAttribute)
-        if (showHeader && headerVisible && header.isNotEmpty()) Text(header, Modifier.align(Alignment.TopCenter).padding(top = 10.dp).border(1.dp, themeColor(R.attr.border), RoundedCornerShape(100.dp)).padding(horizontal = 10.dp, vertical = 5.dp), color = themeColor(R.attr.primaryTextColor), fontSize = logTextSize(R.dimen.default_font_text_view))
+        if (showHeader) LogTimeHeader(header, headerVisible, Modifier.align(Alignment.TopCenter))
     }
+}
+/** Reads the header state in its own scope so a header change redraws only the header. */
+@Composable private fun LogTimeHeader(header: State<String>, visible: State<Boolean>, modifier: Modifier) {
+    val text = header.value
+    if (visible.value && text.isNotEmpty()) Text(text, modifier.padding(top = 10.dp).border(1.dp, themeColor(R.attr.border), RoundedCornerShape(100.dp)).padding(horizontal = 10.dp, vertical = 5.dp), color = themeColor(R.attr.primaryTextColor), fontSize = logTextSize(R.dimen.default_font_text_view))
 }
 private object NoLogPrefetch : LazyListPrefetchStrategy {
     override fun LazyListPrefetchScope.onScroll(delta: Float, layoutInfo: LazyListLayoutInfo) = Unit

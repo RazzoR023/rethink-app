@@ -9,6 +9,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
@@ -29,12 +30,17 @@ import com.google.android.material.R as MaterialR
  */
 @Composable
 fun themeColor(@AttrRes attribute: Int): Color {
-    LocalConfiguration.current
-    val values = LocalContext.current.obtainOrderedStyledAttributes(intArrayOf(attribute))
-    return try {
-        check(values.hasValue(0)) { "Required Rethink theme color is missing: $attribute" }
-        Color(values.getColor(0, android.graphics.Color.TRANSPARENT))
-    } finally { values.recycle() }
+    val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+    // Resolving a theme attribute allocates and walks the theme; list rows call this about
+    // ten times each, so resolve once per call site, theme and configuration.
+    return remember(context, configuration, attribute) {
+        val values = context.obtainOrderedStyledAttributes(intArrayOf(attribute))
+        try {
+            check(values.hasValue(0)) { "Required Rethink theme color is missing: $attribute" }
+            Color(values.getColor(0, android.graphics.Color.TRANSPARENT))
+        } finally { values.recycle() }
+    }
 }
 
 /**

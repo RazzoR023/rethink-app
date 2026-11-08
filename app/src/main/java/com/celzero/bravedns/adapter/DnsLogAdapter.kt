@@ -88,6 +88,8 @@ class DnsLogAdapter(val context: Context, val loadFavIcon: Boolean, val isRethin
             presentation.clear(); presentation.update(value)
             onDispose { presentation.clearFavIcon() }
         }
+        // Off the main thread: a cache miss asks PackageManager for the icon and rescales it.
+        LaunchedEffect(value) { presentation.displayAppIcon(value) }
         DnsLogRow(presentation.b)
     }
 
@@ -371,16 +373,14 @@ class DnsLogAdapter(val context: Context, val loadFavIcon: Boolean, val isRethin
             } else {
                 b.dnsAppName.text = log.appName
             }
-            if (log.packageName.isEmpty() || log.packageName == Constants.EMPTY_PACKAGE_NAME) {
-                loadAppIcon(getDefaultIcon(context))
-            } else {
-                loadAppIcon(getIcon(context, log.packageName))
-            }
-            return
         }
 
-        private fun loadAppIcon(drawable: Drawable?) {
-            b.dnsAppIcon.setImageDrawable(drawable ?: getDefaultIcon(context))
+        suspend fun displayAppIcon(log: DnsLog) {
+            val icon = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                if (log.packageName.isEmpty() || log.packageName == Constants.EMPTY_PACKAGE_NAME) null
+                else getIcon(context, log.packageName)
+            }
+            b.dnsAppIcon.setImageDrawable(icon ?: getDefaultIcon(context))
         }
 
         private fun displayIcon(log: DnsLog) {
