@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="relay_picker_title">Relay through</string>
+    <string name="relay_picker_subtitle">%1$s connects to its server through the config you pick</string>
+    <string name="relay_picker_direct">Direct</string>
+    <string name="relay_picker_direct_desc">Connect straight to the server, no relay</string>
+    <string name="relay_picker_ip46">IPv4 + IPv6</string>
+    <string name="relay_picker_id">id %1$d</string>
+    <string name="relay_picker_failed">Couldn\'t change the relay</string>
+</resources>

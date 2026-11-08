@@ -57,7 +57,9 @@ import com.celzero.bravedns.ui.compose.proxy.WgPageLogic
 import com.celzero.bravedns.ui.compose.proxy.WgPageState
 import com.celzero.bravedns.ui.compose.proxy.WgPeerUi
 import com.celzero.bravedns.ui.dialog.WgAddPeerDialog
-import com.celzero.bravedns.ui.dialog.WgHopDialog
+import com.celzero.bravedns.ui.compose.wireguard.RelayLogic
+import com.celzero.bravedns.ui.compose.wireguard.RelayOption
+import com.celzero.bravedns.ui.compose.wireguard.RelayPickerUi
 import com.celzero.bravedns.ui.dialog.WgSsidDialog
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.Logger
@@ -88,7 +90,7 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
  * WireGuard config page (Advanced and Simple / one-wg configs). Layout: ui/compose/proxy
  * (WgDetailScreen on ProxyDetailScaffold); all reads / writes are here. The enable switch runs
  * the same checks as the config list (WgConfigAdapter). The peer, relay (hop) and SSID editors
- * are still the ported dialogs (WgAddPeerDialog, WgHopDialog, WgSsidDialog).
+ * are still the ported dialogs (WgAddPeerDialog, WgSsidDialog); the relay picker is RelayPickerSheet.
  */
 class WgConfigDetailActivity : BaseActivity(), WgDetailActions {
     private val persistentState by inject<PersistentState>()
@@ -669,26 +671,77 @@ class WgConfigDetailActivity : BaseActivity(), WgDetailActions {
                 }
                 return@io
             }
-            val hopId = WgHopManager.getHop(configId)
-            Logger.d(LOG_TAG_PROXY, "hop result: $hopId")
-            val iid = WgPageLogic.configIdOf(hopId, ID_WG_BASE, INVALID_CONF_ID)
+            val src = WireguardManager.getConfigById(configId)
             val hopables = WgHopManager.getHopableWgs(configId)
+            val options = hopables.map { c ->
+                val m = WireguardManager.getConfigFilesById(c.getId())
+                val ips = VpnController.getSupportedIpVersion(ID_WG_BASE + c.getId())
+                RelayOption(
+                    id = c.getId(),
+                    name = c.getName(),
+                    active = m?.isActive == true,
+                    ip4 = ips?.first == true,
+                    ip6 = ips?.second == true,
+                    restricted = m != null && (m.useOnlyOnMetered || m.ssidEnabled),
+                )
+            }
+            val current = currentRelay()
             uiCtx {
-                if (hopables.isEmpty()) {
-                    toast(R.string.hop_error_toast_msg_2, Toast.LENGTH_LONG)
-                    return@uiCtx
-                }
-                if (WireguardManager.getConfigById(configId) == null) {
+                if (src == null) {
                     toast(R.string.config_invalid_desc, Toast.LENGTH_SHORT)
                     return@uiCtx
                 }
-                val themeId = Themes.getCurrentTheme(isDarkThemeOn(), persistentState.theme)
-                val hopDialog = WgHopDialog(this, themeId, configId, hopables, iid)
-                hopDialog.setCanceledOnTouchOutside(false)
-                hopDialog.setOnDismissListener { refreshHopStatus() }
-                hopDialog.show()
+                if (options.isEmpty()) {
+                    toast(R.string.hop_error_toast_msg_2, Toast.LENGTH_LONG)
+                    return@uiCtx
+                }
+                state.relay = RelayPickerUi(src.getName(), options, selected = current)
             }
         }
+    }
+
+    /** the config id this one is relayed through now, or [RelayLogic.DIRECT] */
+    private suspend fun currentRelay(): Int {
+        val hopId = WgHopManager.getHop(configId)
+        if (hopId.isEmpty()) return RelayLogic.DIRECT
+        val id = WgPageLogic.configIdOf(hopId, ID_WG_BASE, INVALID_CONF_ID)
+        return if (id == INVALID_CONF_ID) RelayLogic.DIRECT else id
+    }
+
+    override fun pickRelay(id: Int) {
+        val ui = state.relay ?: return
+        if (!RelayLogic.canPick(ui, id)) return
+        state.relay = RelayLogic.startApplying(ui, id)
+        io {
+            val src = ID_WG_BASE + configId
+            val res: Pair<Boolean, String?> = try {
+                if (id == RelayLogic.DIRECT) {
+                    WgHopManager.removeHop(configId, ui.selected)
+                } else {
+                    // dry run first: a failed test leaves the current relay untouched
+                    val test = VpnController.testHop(src, ID_WG_BASE + id)
+                    if (!test.first) test else WgHopManager.hop(configId, id)
+                }
+            } catch (e: Exception) {
+                Logger.w(LOG_TAG_PROXY, "relay: $configId -> $id failed: ${e.message}")
+                Pair(false, e.message)
+            }
+            val now = currentRelay()
+            val err = if (res.first) null else (res.second?.takeIf { it.isNotBlank() } ?: getString(R.string.relay_picker_failed))
+            Logger.i(LOG_TAG_PROXY, "relay: $configId -> $id ok? ${res.first}, now: $now")
+            uiCtx {
+                val latest = state.relay ?: return@uiCtx // sheet closed meanwhile
+                val done = RelayLogic.finish(latest, now, err)
+                state.relay = done
+                state.hopName = RelayLogic.selectedName(done)
+            }
+        }
+    }
+
+    override fun closeRelay() {
+        // closing mid-change is fine: the change finishes and the row refreshes
+        state.relay = null
+        refreshHopStatus()
     }
 
     private fun refreshHopStatus() {

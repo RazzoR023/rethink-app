@@ -33,19 +33,6 @@ import com.celzero.bravedns.R
     }
 }
 
-@Composable fun WgHopRow(b: WgHopRowState) {
-    WgCard(b.wgHopListCard, contentPadding = PaddingValues(start = 5.dp, top = 7.dp, bottom = 7.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                WgText(b.wgHopListNameTv); WgText(b.wgHopListDescTv)
-                WgChips(b.chipGroup, "list_item_wg_hop", b.chipIpv4, b.chipIpv6, b.chipSplitTunnel, b.chipAmnezia, b.chipHopSrc, b.chipHopping, b.chipProperties)
-            }
-            WgCheck(b.wgHopListCheckbox, b.wgHopListNameTv.text.toString(), compoundSource = "list_item_wg_hop:wg_hop_list_checkbox")
-        }
-    }
-    WgProgress(b.wgHopListProgress, Modifier.fillMaxWidth().padding(horizontal = 10.dp))
-}
-
 @Composable fun WgStatsRow(b: WgStatsRowState) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

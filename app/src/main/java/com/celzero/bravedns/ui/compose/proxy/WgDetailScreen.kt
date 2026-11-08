@@ -58,6 +58,8 @@ class WgPageState(name: String, val oneWg: Boolean) {
     var lockdown by mutableStateOf(false)
     /** name of the config this one is relayed through (hop), null when none */
     var hopName by mutableStateOf<String?>(null)
+    /** the "Relay through" sheet, null when closed */
+    var relay by mutableStateOf<com.celzero.bravedns.ui.compose.wireguard.RelayPickerUi?>(null)
     var mobileOnly by mutableStateOf(false)
     /** device has Wi-Fi (the SSID option is hidden otherwise) */
     var ssidSupported by mutableStateOf(true)
@@ -87,6 +89,8 @@ interface WgDetailActions {
     fun setLockdown(on: Boolean)
     fun setCatchAll(on: Boolean)
     fun openHop()
+    fun pickRelay(id: Int)
+    fun closeRelay()
     fun setMobileOnly(on: Boolean)
     fun setSsidEnabled(on: Boolean)
     fun editSsids()
@@ -134,6 +138,9 @@ fun WgDetailScreen(state: WgPageState, actions: WgDetailActions, rules: ProxyRul
     }
     ProxyRulesHosts(rules)
     state.confirm?.let { c -> ProxyConfirmDialog(c) { state.confirm = null } }
+    state.relay?.let { r ->
+        com.celzero.bravedns.ui.compose.wireguard.RelayPickerSheet(r, actions::pickRelay, actions::closeRelay)
+    }
 }
 
 @Composable

@@ -26,13 +26,3 @@ fun Dialog.setWgContent(activity: Activity, content: @Composable () -> Unit) {
     setContentView(view)
 }
 
-@androidx.compose.runtime.Composable
-fun WgHopContent(b: WgHopState) {
-    androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
-        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
-            WgText(b.wgHopDialogHeading)
-            b.wgHopRecyclerView.adapter?.Content(androidx.compose.ui.Modifier.weight(1f))
-            WgAction(b.wgHopDialogOkButton, source = "dialog_wg_hop:wg_hop_dialog_ok_button")
-        }
-    }
-}
