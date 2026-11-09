@@ -1173,7 +1173,7 @@ object FirewallManager : KoinComponent {
 
     suspend fun exemptRethinkApp(rethinkUid: Int) {
         try {
-            db.exemptRethinkApp()
+            db.exemptRethinkApp(rethinkUid)
         } catch (e: Exception) {
             Logger.w(LOG_TAG_FIREWALL, "exemptRethinkApp db failed for uid $rethinkUid", e)
             return

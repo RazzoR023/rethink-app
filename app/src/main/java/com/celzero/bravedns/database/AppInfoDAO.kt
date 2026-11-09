@@ -252,8 +252,8 @@ interface AppInfoDAO {
     @Query("select uid from AppInfo where packageName = :packageName")
     fun getAppInfoUidForPackageName(packageName: String): Int
 
-    @Query("update AppInfo set firewallStatus = 7, connectionStatus = 3, isProxyExcluded = 1 where packageName = 'com.celzero.bravedns'")
-    fun exemptRethinkApp()
+    @Query("update AppInfo set firewallStatus = 7, connectionStatus = 3, isProxyExcluded = 1 where uid = :uid")
+    fun exemptRethinkApp(uid: Int)
 
     @Query("select * from AppInfo where tempAllowEnabled = 1 and tempAllowExpiryTime > 0")
     suspend fun getTempAllowedApps(): List<AppInfo>
