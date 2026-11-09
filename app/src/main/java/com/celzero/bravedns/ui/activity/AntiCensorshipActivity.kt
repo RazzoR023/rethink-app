@@ -71,6 +71,14 @@ class AntiCensorshipActivity : BaseActivity() {
 
         companion object {
             fun fromInt(value: Int): DialStrategies? = DialStrategies.entries.firstOrNull { it.mode == value }
+
+            /**
+             * the stored dial strategy alone can't tell Auto from Hybrid: TCP_PROXY shares
+             * Settings.SplitAuto with SPLIT_AUTO, so [fromInt] never returns TCP_PROXY. Hybrid is
+             * SplitAuto plus the auto-proxy flag.
+             */
+            fun effective(mode: Int, autoProxyEnabled: Boolean): DialStrategies? =
+                if (mode == SPLIT_AUTO.mode && autoProxyEnabled) TCP_PROXY else fromInt(mode)
         }
     }
 

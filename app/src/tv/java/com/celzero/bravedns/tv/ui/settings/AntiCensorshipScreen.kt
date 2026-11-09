@@ -102,7 +102,11 @@ fun AntiCensorshipScreen() {
                     selected = dialStrategy == opt.mode,
                     onClick = {
                         dialStrategy = opt.mode
-                        ioScope.launch { persistentState.dialStrategy = opt.mode }
+                        ioScope.launch {
+                            // TV has no Hybrid option; clear it so Auto isn't treated as Hybrid
+                            persistentState.autoProxyEnabled = false
+                            persistentState.dialStrategy = opt.mode
+                        }
                     },
                 )
             }

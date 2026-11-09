@@ -1716,6 +1716,13 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
                     setDialStrategy()
                 }
             }
+
+            PersistentState.AUTO_PROXY_ENABLED -> {
+                // Auto <-> Hybrid keeps dial_strategy unchanged; only this flag differs
+                io("autoProxy") {
+                    setDialStrategy()
+                }
+            }
             PersistentState.ENDPOINT_INDEPENDENCE -> {
                 io("endpointIndependence") {
                     setTransparency()

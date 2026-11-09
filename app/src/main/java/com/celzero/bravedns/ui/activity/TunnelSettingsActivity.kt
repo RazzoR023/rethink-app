@@ -1267,7 +1267,10 @@ class TunnelSettingsActivity : BaseActivity() {
             val dialStrategy = persistentState.dialStrategy
             val retryStrategy = persistentState.retryStrategy
             val isAcDisabled = dialStrategy == AntiCensorshipActivity.DialStrategies.NEVER_SPLIT.mode
-            val isHybridDial = dialStrategy == AntiCensorshipActivity.DialStrategies.TCP_PROXY.mode
+            val isHybridDial = AntiCensorshipActivity.DialStrategies.effective(
+                dialStrategy,
+                persistentState.autoProxyEnabled
+            ) == AntiCensorshipActivity.DialStrategies.TCP_PROXY
             val isNeverRetry = retryStrategy == AntiCensorshipActivity.RetryStrategies.RETRY_NEVER.mode
             val hasConflict = !isAcDisabled && !(isHybridDial && isNeverRetry)
             checks.add(

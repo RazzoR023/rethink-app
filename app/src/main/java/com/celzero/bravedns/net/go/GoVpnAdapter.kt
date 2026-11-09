@@ -3603,7 +3603,10 @@ class GoVpnAdapter : KoinComponent {
                 Logger.w(LOG_TAG_VPN, "$TAG invalid retry strategy: ${persistentState.retryStrategy}, no-op set auto mode")
                 return
             }
-            val dialStrategy = AntiCensorshipActivity.DialStrategies.fromInt(persistentState.dialStrategy)
+            val dialStrategy = AntiCensorshipActivity.DialStrategies.effective(
+                persistentState.dialStrategy,
+                persistentState.autoProxyEnabled
+            )
             if (dialStrategy == null) {
                 Logger.w(LOG_TAG_VPN, "$TAG invalid dial strategy: ${persistentState.dialStrategy}, no-op set auto mode")
                 return
