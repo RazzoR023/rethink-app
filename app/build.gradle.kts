@@ -300,6 +300,12 @@ android {
                 enable = true // Enables code and resource optimizations (AGP 9.3 DSL).
             }
             signingConfig = signingConfigs.getByName("debug")
+            // opt-in side-by-side install, as for debug: an optimized, non-debuggable build
+            // that installs over the debug ".ui" app (same debug key) instead of the store app
+            providers.gradleProperty("debugAppIdSuffix").orNull?.takeIf { it.isNotBlank() }?.let { s ->
+                applicationIdSuffix = s
+                resValue("string", "app_name", "Rethink ${s.trimStart('.')}")
+            }
             ndk {
                 debugSymbolLevel = "SYMBOL_TABLE"
                 abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
