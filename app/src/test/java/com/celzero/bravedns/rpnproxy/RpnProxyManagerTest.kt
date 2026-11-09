@@ -1385,6 +1385,22 @@ class RpnProxyManagerTest : KoinTest {
     }
 
     @Test
+    fun `DnsMode activeFilters - default alone means no filters, not Privacy`() {
+        // reset used to store "default": the server applied no filters while the sheet
+        // showed Privacy ticked
+        assertTrue(RpnProxyManager.DnsMode.activeFilters("default").isEmpty())
+        assertTrue(RpnProxyManager.DnsMode.activeFilters("").isEmpty())
+    }
+
+    @Test
+    fun `DnsMode activeFilters - keeps real filters and drops default`() {
+        assertEquals(
+            setOf(RpnProxyManager.DnsMode.PRIVACY, RpnProxyManager.DnsMode.SECURITY),
+            RpnProxyManager.DnsMode.activeFilters("default,privacy,security")
+        )
+    }
+
+    @Test
     fun `DnsMode setFromCsv blank returns default`() {
         val modes = RpnProxyManager.DnsMode.setFromCsv("")
         assertEquals(setOf(RpnProxyManager.DnsMode.DEFAULT), modes)

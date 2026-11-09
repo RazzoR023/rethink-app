@@ -385,7 +385,7 @@ class ServerSettingsBottomSheet : BaseBottomSheetDialogFragment() {
     }
 
     private fun setupDnsSection() {
-        // restore initial selection (DEFAULT is filtered out and migrated to Privacy)
+        // restore initial selection (DEFAULT alone shows as "no filters")
         val activeModes = getActiveModesFromState()
         lastEmittedTunTypes = if (activeModes.isEmpty()) ""
                               else RpnProxyManager.DnsMode.tunTypesFromSet(activeModes)
@@ -503,12 +503,8 @@ class ServerSettingsBottomSheet : BaseBottomSheetDialogFragment() {
      * - (Privacy) which is the default.
      */
     private fun getActiveModesFromState(): Set<RpnProxyManager.DnsMode> {
-        val stored = persistentState.rpnDnsTunTypes
-        // no filter
-        if (stored.isBlank()) return emptySet()
-        val modes = RpnProxyManager.DnsMode.setFromCsv(stored)
-        val nonDefault = modes.filter { it != RpnProxyManager.DnsMode.DEFAULT }.toSet()
-        return nonDefault.ifEmpty { setOf(RpnProxyManager.DnsMode.PRIVACY) }
+        // show what the server applies: "default" alone is no filters, not Privacy
+        return RpnProxyManager.DnsMode.activeFilters(persistentState.rpnDnsTunTypes)
     }
 
     /**

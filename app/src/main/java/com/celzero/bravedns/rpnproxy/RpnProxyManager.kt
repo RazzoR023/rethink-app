@@ -365,6 +365,16 @@ object RpnProxyManager : KoinComponent {
              *
              * An empty [modes] set is treated as [DEFAULT].
              */
+            /**
+             * The filters the RPN server actually applies for a stored [csv]: Privacy, Family
+             * and Security only. Blank or DEFAULT-only means no filters (empty set), since
+             * that is what the server gets (GoVpnAdapter.constructRpnOps).
+             */
+            fun activeFilters(csv: String): Set<DnsMode> {
+                if (csv.isBlank()) return emptySet()
+                return setFromCsv(csv).filter { it != DEFAULT }.toSet()
+            }
+
             fun tunTypesFromSet(modes: Set<DnsMode>): String {
                 val effective = modes.ifEmpty { setOf(DEFAULT) }
                 return effective.sortedBy { it.id }.joinToString(",") { it.tunType }
@@ -827,7 +837,9 @@ object RpnProxyManager : KoinComponent {
         }
 
         // Restore configuration persistent-state values to their defaults.
-        persistentState.rpnDnsTunTypes = DnsMode.DEFAULT.tunType
+        // same as a fresh install (PersistentState.rpnDnsTunTypes default); "default" meant
+        // "no filters" to the server while the sheet showed Privacy ticked
+        persistentState.rpnDnsTunTypes = DnsMode.PRIVACY.tunType
         persistentState.rpnConfigHandlingManual = false
         persistentState.rpnAlwaysChangeIdentity = false
         persistentState.rpnPort = 0
