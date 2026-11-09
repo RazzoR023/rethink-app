@@ -821,6 +821,17 @@ class FirewallManagerTest : KoinTest {
     }
 
     @Test
+    fun isAnyAppBypassesDns_ignoresGivenUid() = runBlocking {
+        rethinkAppInfo.firewallStatus = FirewallManager.FirewallStatus.BYPASS_DNS_FIREWALL.id
+        assertTrue(FirewallManager.isAnyAppBypassesDns())
+        // rethink's own exemption must not count as "some app bypasses dns"
+        assertFalse(FirewallManager.isAnyAppBypassesDns(ignoreUid = rethinkAppInfo.uid))
+
+        testAppInfo1.firewallStatus = FirewallManager.FirewallStatus.BYPASS_DNS_FIREWALL.id
+        assertTrue(FirewallManager.isAnyAppBypassesDns(ignoreUid = rethinkAppInfo.uid))
+    }
+
+    @Test
     fun testIsOrbotInstalled() = runBlocking {
         // Test with existing data
         val result = FirewallManager.isOrbotInstalled()

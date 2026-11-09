@@ -572,11 +572,14 @@ object FirewallManager : KoinComponent {
     }
 
     // any app is bypassed both dns and firewall
-    suspend fun isAnyAppBypassesDns(): Boolean {
+    // ignoreUid: rethink marks itself bypass-dns-firewall (exemptRethinkApp); its own queries
+    // carry its uid, so that mark must not make every unknown-uid query skip the blocklists
+    suspend fun isAnyAppBypassesDns(ignoreUid: Int? = null): Boolean {
         mutex.withLock {
             return appInfos.values().any {
                 it.firewallStatus == FirewallStatus.BYPASS_DNS_FIREWALL.id &&
-                it.tombstoneTs == 0L
+                it.tombstoneTs == 0L &&
+                it.uid != ignoreUid
             }
         }
     }

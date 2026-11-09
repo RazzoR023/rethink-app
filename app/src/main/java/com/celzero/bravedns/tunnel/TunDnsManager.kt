@@ -290,7 +290,7 @@ object TunDnsManager: KoinComponent {
         }
 
         if (uid == INVALID_UID) {
-            val anyAppBypass = FirewallManager.isAnyAppBypassesDns()
+            val anyAppBypass = FirewallManager.isAnyAppBypassesDns(ignoreUid = rethinkUid)
             logd("onQuery: FirewallManager.isAnyAppBypassesDns for $fqdn")
             if (anyAppBypass) {
                 val opts = makeNsOpts(uid, transportIdsAlg(tid), fqdn, true, isIfaceCellular, ssid)
