@@ -66,6 +66,7 @@ import com.celzero.bravedns.ui.activity.PauseActivity
 import com.celzero.bravedns.ui.activity.WelcomeActivity
 import com.celzero.bravedns.util.AndroidUidConfig
 import com.celzero.bravedns.util.Constants
+import com.celzero.bravedns.util.UpdateMigrations
 import com.celzero.bravedns.util.Constants.Companion.ALPHA_UPDATE_CHECK_URL
 import com.celzero.bravedns.util.Constants.Companion.MAX_ENDPOINT
 import com.celzero.bravedns.util.Constants.Companion.PKG_NAME_PLAY_STORE
@@ -422,7 +423,7 @@ class HomeScreenActivity : BaseActivity() {
         }
     }
 
-    private fun removeThisMethod() {
+    private fun removeThisMethod(prevVersion: Int) {
         persistentState.goMaxMemory = -1L
 
         // change the persistent state for defaultDnsUrl, if its google.com (only for v055d)
@@ -459,11 +460,17 @@ class HomeScreenActivity : BaseActivity() {
             Logger.w(LOG_TAG_UI, "err adding new app: ${e.message}", e)
         }
 
-        // reset the local blocklist download from android download manager to custom in v055o
-        persistentState.useCustomDownloadManager = true
+        // reset the local blocklist download from android download manager to custom in v055o;
+        // only once, for updates from before then, else every update undid the user's choice
+        if (UpdateMigrations.resetDownloader(prevVersion)) {
+            persistentState.useCustomDownloadManager = true
+        }
 
-        // migrate smart dns users to the "No Filter" option, remove this post v057.
-        io { migrateSmartDnsSelectionIfNeeded() }
+        // migrate smart dns selection to the SmartDnsEndpoint table (v057); only once, for
+        // updates from before then, else every update re-picked "Privacy" over "No Filter"
+        if (UpdateMigrations.migrateSmartDns(prevVersion)) {
+            io { migrateSmartDnsSelectionIfNeeded() }
+        }
 
         // delete residue wgs from database, remove this post v055o
         io { WireguardManager.deleteResidueWgs() }
@@ -575,7 +582,7 @@ class HomeScreenActivity : BaseActivity() {
         }
 
         // FIXME: remove this post v054
-        removeThisMethod()
+        removeThisMethod(prevVersion)
     }
 
     private fun isNewVersion(): Boolean {
