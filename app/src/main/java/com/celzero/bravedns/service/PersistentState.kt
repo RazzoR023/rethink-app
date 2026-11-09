@@ -909,6 +909,7 @@ class PersistentState(context: Context) : SimpleKrate(context), KoinComponent {
         useCustomDownloadManager = true
         enableDnsCache = true
         useSystemDnsForUndelegatedDomains = false
+        useSystemDnsOnCaptivePortal = true
         blockDnsForUnknownApp = false
         preventDnsLeaks = true
         proxyDns = true

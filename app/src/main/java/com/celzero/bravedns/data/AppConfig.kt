@@ -923,6 +923,33 @@ internal constructor(
         )
     }
 
+    /**
+     * The DNS a fresh install starts with: Smart DNS "Privacy" on play-store builds (see
+     * HomeScreenActivity.setDefaultSmartDnsPrivacyForNewInstalls), else the default Rethink
+     * endpoint ("RDNS Default", not Plus). Used by Restore defaults.
+     */
+    suspend fun enableDefaultDns() {
+        if (com.celzero.bravedns.util.Utilities.isPlayStoreFlavour()) {
+            val privacy = smartDnsEndpointRepository.getSmartDnsEndpoints()
+                .firstOrNull { SmartDnsEndpoint.isPrivacyMode(it.dnsMode) }
+            if (privacy != null) {
+                enableSmartDns(privacy.id)
+                return
+            }
+        }
+        if (getDnsType() != DnsType.RETHINK_REMOTE) {
+            removeConnectionStatus()
+        }
+        val prev = persistentState.connectedDnsName
+        rethinkDnsEndpointRepository.updateConnectionDefault()
+        onDnsChange(DnsType.RETHINK_REMOTE)
+        logEvent(
+            EventType.DNS_SERVER_CHANGE,
+            "RethinkDNS Default enabled",
+            "RethinkDNS Default enabled (restore defaults), prev: $prev"
+        )
+    }
+
     fun isRethinkDnsConnected(): Boolean {
         return getDnsType() == DnsType.RETHINK_REMOTE
     }

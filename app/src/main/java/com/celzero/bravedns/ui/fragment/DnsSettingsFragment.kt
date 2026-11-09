@@ -719,8 +719,8 @@ class DnsSettingsFragment : Fragment(),
             }
             // restore all dns settings values to their defaults (flavor / android-version aware)
             persistentState.restoreDnsSettingsDefaults()
-            // restore dns selection back to the default (RethinkDNS)
-            appConfig.enableRethinkDnsPlus()
+            // restore dns selection to what a new install gets (not always Rethink Plus)
+            appConfig.enableDefaultDns()
             logEvent(
                 "restore defaults",
                 "User restored dns settings to default values"
