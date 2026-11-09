@@ -1087,4 +1087,65 @@ class TunDnsManagerTest {
     fun `keepWgIdsWithDns - all without DNS gives empty list`() {
         assertTrue(TunDnsManager.keepWgIdsWithDns(listOf("wg1", "wg2")) { false }.isEmpty())
     }
+
+    // --- DNS-only mode: wildcard domain rules and per-app bypass (bug: both were ignored) ---
+
+    private fun dnsOnlySetup() {
+        val mode = mockk<AppConfig.BraveMode>(relaxed = true)
+        every { mode.isDnsMode() } returns true
+        every { appConfig.getBraveMode() } returns mode
+        every { appConfig.isSystemDns() } returns false
+        every { appConfig.isSmartDnsEnabled() } returns false
+        every { persistentState.getAllowedDnsRecordTypesAsEnum() } returns ResourceRecordTypes.entries.toSet()
+        every { persistentState.enableDnsCache } returns false
+    }
+
+    private fun dnsParams(uid: Int, fqdn: String) =
+        TunDnsManager.DnsParams("", uid.toString(), fqdn, 1L, false, null, false)
+
+    @Test
+    fun `onQuery DNS-only - wildcard app block rule blocks the lookup`() = runTest {
+        dnsOnlySetup()
+        val uid = 10123
+        // exact-name lookup finds nothing; only the wildcard-aware lookup matches (*.ads.com)
+        every { DomainRulesManager.getDomainRule("x.ads.com", any()) } returns DomainRulesManager.Status.NONE
+        every { DomainRulesManager.getAggregatedDomainRule("x.ads.com", uid) } returns Pair(DomainRulesManager.Status.BLOCK, "x.ads.com")
+
+        val opts = TunDnsManager.handleOnQuery(dnsParams(uid, "x.ads.com"))
+
+        assertTrue(opts.tidcsv.contains(Backend.BlockAll))
+    }
+
+    @Test
+    fun `onQuery DNS-only - wildcard global trust rule skips blocklists`() = runTest {
+        dnsOnlySetup()
+        every { DomainRulesManager.getAggregatedDomainRule("a.ok.com", UID_EVERYBODY) } returns Pair(DomainRulesManager.Status.TRUST, "a.ok.com")
+
+        val opts = TunDnsManager.handleOnQuery(dnsParams(10124, "a.ok.com"))
+
+        assertTrue(opts.noblock)
+    }
+
+    @Test
+    fun `onQuery DNS-only - app set to bypass DNS and firewall skips blocklists`() = runTest {
+        dnsOnlySetup()
+        val status = mockk<FirewallManager.FirewallStatus>(relaxed = true)
+        every { status.bypassDnsFirewall() } returns true
+        coEvery { FirewallManager.appStatus(10125) } returns status
+
+        val opts = TunDnsManager.handleOnQuery(dnsParams(10125, "tracker.example"))
+
+        assertTrue(opts.noblock)
+        assertFalse(opts.tidcsv.contains(Backend.BlockAll))
+    }
+
+    @Test
+    fun `onQuery DNS-only - no rule and no bypass keeps blocklists on`() = runTest {
+        dnsOnlySetup()
+
+        val opts = TunDnsManager.handleOnQuery(dnsParams(10126, "plain.example"))
+
+        assertFalse(opts.noblock)
+        assertTrue(opts.tidcsv.contains(Backend.Preferred))
+    }
 }

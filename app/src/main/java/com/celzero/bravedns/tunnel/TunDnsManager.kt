@@ -209,7 +209,14 @@ object TunDnsManager: KoinComponent {
         }
 
         if (uid != INVALID_UID) {
-            when (DomainRulesManager.getDomainRule(fqdn, uid)) {
+            // per-app "Bypass DNS & firewall": skip on-device blocklists, as in dns+firewall mode
+            if (FirewallManager.appStatus(uid).bypassDnsFirewall()) {
+                val r = makeNsOpts(uid, tid, fqdn, true, isIfaceCellular, ssid)
+                logd("onQuery: makeNsOpts(app-bypass) for $fqdn, return $r")
+                return r
+            }
+            // aggregated: also matches wildcard rules (*.example.com), not just the exact name
+            when (DomainRulesManager.getAggregatedDomainRule(fqdn, uid).first) {
                 DomainRulesManager.Status.TRUST -> {
                     logd("onQuery: DomainRulesManager.getDomainRule($fqdn, uid=$uid) is trusted")
                     val r = makeNsOpts(uid, getTransportIdToBypass(tid, isLockdown), fqdn, true, isIfaceCellular, ssid)
@@ -231,7 +238,7 @@ object TunDnsManager: KoinComponent {
         }
 
         // check for global domain rules
-        when (DomainRulesManager.getDomainRule(fqdn, UID_EVERYBODY)) {
+        when (DomainRulesManager.getAggregatedDomainRule(fqdn, UID_EVERYBODY).first) {
             DomainRulesManager.Status.TRUST -> {
                 logd("onQuery: DomainRulesManager.getDomainRule($fqdn, UID_EVERYBODY) is trusted")
                 val r = makeNsOpts(uid, getTransportIdToBypass(tid, isLockdown), fqdn, true, isIfaceCellular, ssid)
