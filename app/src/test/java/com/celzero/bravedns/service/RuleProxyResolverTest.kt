@@ -81,8 +81,12 @@ class RuleProxyResolverTest {
         var wgLockdown: Boolean = false,
         var wg: (String) -> List<String> = { listOf(it, Backend.Exit) },
         var endpoints: Map<String, Endpoint> = emptyMap(),
-        var pkg: String? = "com.example.app"
+        var pkg: String? = "com.example.app",
+        var inLockdown: Boolean = false,
+        var lockdown: List<String> = emptyList()
     ) : RuleProxyResolver.Env {
+        override val rulesInLockdown get() = inLockdown
+        override suspend fun lockdownIds() = lockdown
         override suspend fun isAppExcludedFromProxy() = excluded
         override fun isAppInWgLockdown() = wgLockdown
         override fun wgIds(pid: String) = wg(pid)
@@ -323,6 +327,56 @@ class RuleProxyResolverTest {
         val env = FakeEnv(wgLockdown = true, endpoints = mapOf(ID_S5_BASE to Endpoint(true, null)))
         assertEquals(Decision.None, RuleProxyResolver.decide(rule(wg1), env))
         assertEquals(Decision.None, RuleProxyResolver.decide(rule(ID_S5_BASE), env))
+    }
+
+    @Test
+    fun `rules in lockdown - socks5 rule goes first, then the app's lockdown config`() = runBlocking {
+        val env = FakeEnv(
+            rpnIds = listOf("rpn1"), wgLockdown = true, inLockdown = true, lockdown = listOf(wg2),
+            endpoints = mapOf(ID_S5_BASE to Endpoint(true, null))
+        )
+        assertEquals(Decision.Route(listOf("rpn1", ID_S5_BASE, wg2)), RuleProxyResolver.decide(rule(ID_S5_BASE), env))
+    }
+
+    @Test
+    fun `rules in lockdown - wireguard rule never falls back to a direct exit`() = runBlocking {
+        val env = FakeEnv(
+            wgLockdown = true, inLockdown = true, lockdown = listOf(wg2),
+            wg = { listOf(it, "wg9", Backend.Exit, Backend.Base, Backend.Auto) }
+        )
+        assertEquals(Decision.Route(listOf(wg1, "wg9", wg2)), RuleProxyResolver.decide(rule(wg1), env))
+    }
+
+    @Test
+    fun `rules in lockdown - rule via the app's own lockdown config is not repeated`() = runBlocking {
+        val env = FakeEnv(wgLockdown = true, inLockdown = true, lockdown = listOf(wg2), wg = { listOf(it) })
+        assertEquals(Decision.Route(listOf(wg2)), RuleProxyResolver.decide(rule(wg2), env))
+    }
+
+    @Test
+    fun `rules in lockdown - lockdown config not eligible leaves only the rule proxy`() = runBlocking {
+        val env = FakeEnv(
+            wgLockdown = true, inLockdown = true, lockdown = listOf(Backend.Block),
+            endpoints = mapOf(ID_S5_BASE to Endpoint(true, null))
+        )
+        assertEquals(Decision.Route(listOf(ID_S5_BASE)), RuleProxyResolver.decide(rule(ID_S5_BASE), env))
+    }
+
+    @Test
+    fun `rules in lockdown - unusable rule proxy falls through to the lockdown config`() = runBlocking {
+        val env = FakeEnv(
+            wgLockdown = true, inLockdown = true, lockdown = listOf(wg2),
+            wg = { listOf(Backend.Exit) }, endpoints = mapOf(ID_S5_BASE to Endpoint(false, null))
+        )
+        assertEquals(Decision.None, RuleProxyResolver.decide(rule(ID_S5_BASE), env))
+        assertEquals(Decision.None, RuleProxyResolver.decide(rule(wg1), env))
+    }
+
+    @Test
+    fun `rules in lockdown setting doesn't change apps not in lockdown`() = runBlocking {
+        val env = FakeEnv(inLockdown = true, lockdown = listOf(wg2), endpoints = mapOf(ID_S5_BASE to Endpoint(true, null)))
+        assertEquals(Decision.Route(listOf(ID_S5_BASE)), RuleProxyResolver.decide(rule(ID_S5_BASE), env))
+        assertEquals(Decision.Route(listOf(wg1, Backend.Exit)), RuleProxyResolver.decide(rule(wg1), env))
     }
 
     @Test

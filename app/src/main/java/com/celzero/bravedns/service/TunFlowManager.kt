@@ -1197,7 +1197,7 @@ object TunFlowManager : KoinComponent {
         if (uid != rethinkUid) {
             val rule = RuleProxyResolver.findRuleProxy(uid, connTracker.query, connTracker.destIP, connTracker.destPort)
             if (rule != null) {
-                val env = ruleProxyEnv(uid, rpnIds, usesMobileNw, ssid, defProxy)
+                val env = ruleProxyEnv(uid, rpnIds, usesMobileNw, ssid, defProxy, connTracker)
                 when (val d = RuleProxyResolver.decide(rule, env)) {
                     is RuleProxyResolver.Decision.Block -> {
                         connTracker.isBlocked = true
@@ -1403,10 +1403,21 @@ object TunFlowManager : KoinComponent {
         rpnIds: List<String>,
         usesMobileNw: Boolean,
         ssid: String,
-        defProxy: String
+        defProxy: String,
+        connTracker: ConnTrackerMetaData
     ): RuleProxyResolver.Env {
         return object : RuleProxyResolver.Env {
             override val rpnIds: List<String> = rpnIds
+
+            override val rulesInLockdown: Boolean
+                get() = persistentState.ruleProxyInLockdown
+
+            override suspend fun lockdownIds(): List<String> {
+                // no default: the app's lockdown configs (or block) only
+                return WireguardManager.getAllPossibleConfigIdsForApp(
+                    uid, connTracker.destIP, connTracker.destPort, connTracker.query.orEmpty(), usesMobileNw, ssid, ""
+                )
+            }
 
             override suspend fun isAppExcludedFromProxy(): Boolean {
                 return FirewallManager.isAppExcludedFromProxy(uid)

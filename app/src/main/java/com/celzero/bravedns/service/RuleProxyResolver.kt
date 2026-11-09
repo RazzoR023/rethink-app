@@ -42,6 +42,10 @@ import com.celzero.firestack.backend.Backend
  * Once a rule matched, [decide] checks the rule's proxy can be used for this flow; if it can't,
  * the flow falls through to the app's normal routing (not to the next rule), except for a
  * wireguard lockdown config not eligible on this network, which blocks.
+ *
+ * Apps in a wireguard lockdown config ignore rule proxies, unless
+ * PersistentState.ruleProxyInLockdown is on: then a usable rule proxy goes first, followed by
+ * the app's lockdown config, and direct exits are dropped.
  */
 object RuleProxyResolver {
 
@@ -85,6 +89,12 @@ object RuleProxyResolver {
 
         /** app is routed via a wireguard lockdown config */
         fun isAppInWgLockdown(): Boolean
+
+        /** rules route apps in a lockdown config too (setting); see [decide] */
+        val rulesInLockdown: Boolean get() = false
+
+        /** the app's lockdown config ids usable on this network, the fallback after a rule proxy */
+        suspend fun lockdownIds(): List<String> = emptyList()
 
         /** see [WireguardManager.getConfigIdsForRule] */
         fun wgIds(pid: String): List<String>
@@ -143,14 +153,20 @@ object RuleProxyResolver {
     suspend fun decide(rule: RuleProxy, env: Env): Decision {
         // excluded apps go direct; app-level wireguard lockdown pins the app to its config
         if (env.isAppExcludedFromProxy()) return Decision.None
-        if (env.isAppInWgLockdown()) return Decision.None
+        // app-level wireguard lockdown pins the app to its config unless the user lets rules
+        // apply in lockdown; then the rule's proxy goes first, the app's lockdown config after
+        // it, and never a direct exit, so lockdown still never leaks
+        val lockdown = env.isAppInWgLockdown()
+        if (lockdown && !env.rulesInLockdown) return Decision.None
+        val fallback = if (lockdown) env.lockdownIds().filterNot { it == Backend.Block || isDirect(it) } else emptyList()
 
         val pid = rule.proxyId
         if (WireguardManager.isWgProxyId(pid)) {
-            val ids = env.wgIds(pid)
+            val wg = env.wgIds(pid)
+            val ids = if (lockdown) wg.filterNot(::isDirect) else wg
             if (ids.isEmpty()) return Decision.None
             if (ids.contains(Backend.Block)) return Decision.Block
-            return Decision.Route(env.rpnIds + ids)
+            return Decision.Route(env.rpnIds + ids + fallback.filterNot(ids::contains))
         }
 
         if (pid != ID_S5_BASE && pid != ID_ORBOT_BASE && pid != ID_HTTP_BASE) {
@@ -161,8 +177,11 @@ object RuleProxyResolver {
         if (!ep.enabled) return Decision.None
         // the app forwarding to the proxy must never be routed back into it
         if (ep.forwarderApp == env.packageName()) return Decision.None
-        return Decision.Route(env.rpnIds + pid)
+        return Decision.Route(env.rpnIds + pid + fallback)
     }
+
+    /** ids that leave without a proxy (or via whatever auto picks) */
+    private fun isDirect(id: String): Boolean = id == Backend.Exit || id == Backend.Base || id == Backend.Auto
 
     suspend fun resolve(
         uid: Int,

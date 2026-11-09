@@ -37,6 +37,8 @@ internal val originalCompoundSpecs = mapOf(
     "activity_tunnel_settings:dv_wg_allow_incoming_switch" to OriginalCompoundSpec(R.style.OriginalCompound_activity_tunnel_settings_dv_wg_allow_incoming_switch, OriginalCompoundKind.MaterialSwitch, 0f, 0f, false),
     "activity_tunnel_settings:dv_wg_lockdown_switch" to OriginalCompoundSpec(R.style.OriginalCompound_activity_tunnel_settings_dv_wg_lockdown_switch, OriginalCompoundKind.MaterialSwitch, 0f, 0f, false),
     "activity_tunnel_settings:dv_flood_wg_switch" to OriginalCompoundSpec(R.style.OriginalCompound_activity_tunnel_settings_dv_flood_wg_switch, OriginalCompoundKind.MaterialSwitch, 0f, 0f, false),
+    // added after the port (no XML original); styled like its neighbour
+    "activity_tunnel_settings:dv_rule_proxy_lockdown_switch" to OriginalCompoundSpec(R.style.OriginalCompound_activity_tunnel_settings_dv_flood_wg_switch, OriginalCompoundKind.MaterialSwitch, 0f, 0f, false),
     "activity_tunnel_settings:dv_wg_smart_persistent_keepalive_switch" to OriginalCompoundSpec(R.style.OriginalCompound_activity_tunnel_settings_dv_wg_smart_persistent_keepalive_switch, OriginalCompoundKind.MaterialSwitch, 0f, 0f, false),
     "activity_tunnel_settings:dv_tcp_keep_alive_switch" to OriginalCompoundSpec(R.style.OriginalCompound_activity_tunnel_settings_dv_tcp_keep_alive_switch, OriginalCompoundKind.MaterialSwitch, 0f, 0f, false),
     "activity_tunnel_settings:dv_eimf_switch" to OriginalCompoundSpec(R.style.OriginalCompound_activity_tunnel_settings_dv_eimf_switch, OriginalCompoundKind.MaterialSwitch, 0f, 0f, false),

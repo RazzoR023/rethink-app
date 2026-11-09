@@ -523,6 +523,10 @@ class PersistentState(context: Context) : SimpleKrate(context), KoinComponent {
     // global lockdown for wireguard proxy
     var wgGlobalLockdown by booleanPref("wg_global_lockdown").withDefault<Boolean>(false)
 
+    // let custom domain / ip rules that route via a proxy apply to apps in a wireguard lockdown
+    // config; if the rule's proxy can't be used the flow stays on the app's lockdown config
+    var ruleProxyInLockdown by booleanPref("rule_proxy_in_lockdown").withDefault<Boolean>(false)
+
     // smart persistent keep alive for wireguard proxy
     var smartPersistentKeepalive by booleanPref("smart_persistent_keepalive").withDefault<Boolean>(false)
 

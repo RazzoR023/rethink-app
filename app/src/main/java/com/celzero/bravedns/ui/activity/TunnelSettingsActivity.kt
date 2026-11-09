@@ -175,6 +175,7 @@ class TunnelSettingsActivity : BaseActivity() {
         b.dvWgLockdownSwitch.isChecked = persistentState.wgGlobalLockdown
 
         b.dvFloodWgSwitch.isChecked = persistentState.floodWireGuard
+        b.dvRuleProxyLockdownSwitch.isChecked = persistentState.ruleProxyInLockdown
 
         b.dvWgSmartPersistentKeepaliveSwitch.isChecked = persistentState.smartPersistentKeepalive
 
@@ -549,6 +550,15 @@ class TunnelSettingsActivity : BaseActivity() {
 
         b.dvWgLockdownRl.setOnClickListener {
             b.dvWgLockdownSwitch.isChecked = !b.dvWgLockdownSwitch.isChecked
+        }
+
+        b.dvRuleProxyLockdownSwitch.setOnCheckedChangeListener { _, bool ->
+            persistentState.ruleProxyInLockdown = bool
+            logEvent("rule proxy in lockdown", "Proxy rules in lockdown set to: $bool")
+        }
+
+        b.dvRuleProxyLockdownRl.setOnClickListener {
+            b.dvRuleProxyLockdownSwitch.isChecked = !b.dvRuleProxyLockdownSwitch.isChecked
         }
 
         b.dvFloodWgSwitch.setOnCheckedChangeListener { _, bool ->

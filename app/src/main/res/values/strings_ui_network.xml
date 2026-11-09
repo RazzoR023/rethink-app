@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_rule_proxy_in_lockdown">Proxy rules in lockdown</string>
+    <string name="settings_rule_proxy_in_lockdown_desc">Apps locked to a WireGuard config still follow IP and domain rules that route via a proxy. If that proxy can\'t be used, traffic stays on the app\'s locked config, never direct.</string>
+</resources>

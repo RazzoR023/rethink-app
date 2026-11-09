@@ -111,6 +111,13 @@ class TunnelSettingsState(context: Context) {
     val dvWgLockdownTxt = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_wireguard_lockdown_mode) }
     val dvWgLockdownDesc = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_wireguard_lockdown_mode_desc); textColor = UIUtils.fetchColor(context, R.attr.colorOnSurfaceVariant) }
     val dvWgLockdownSwitch = WgControlState(context, checkable = true) .apply { switchThemeOverlay = R.style.CustomCompoundButtonSwitch }
+    val dividerRuleProxyLockdown = WgControlState(context, checkable = false)
+    val dvRuleProxyLockdownRl = WgControlState(context, checkable = false)
+    val dvRuleProxyLockdownIcon = WgControlState(context, checkable = false) .apply { imageResource = R.drawable.universal_ip_rule }
+    val dvRuleProxyLockdownCol = WgControlState(context, checkable = false)
+    val dvRuleProxyLockdownTxt = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_rule_proxy_in_lockdown) }
+    val dvRuleProxyLockdownDesc = WgControlState(context, checkable = false) .apply { text = context.getText(R.string.settings_rule_proxy_in_lockdown_desc); textColor = UIUtils.fetchColor(context, R.attr.colorOnSurfaceVariant) }
+    val dvRuleProxyLockdownSwitch = WgControlState(context, checkable = true) .apply { switchThemeOverlay = R.style.CustomCompoundButtonSwitch }
     val dividerFloodWg = WgControlState(context, checkable = false)
     val dvFloodWgRl = WgControlState(context, checkable = false)
     val dvFloodWgIcon = WgControlState(context, checkable = false) .apply { imageResource = R.drawable.ic_flood_wg }
@@ -327,6 +334,15 @@ class TunnelSettingsState(context: Context) {
                         )),
                         NetworkNode(NetworkKind.SWITCH, control = dvWgLockdownSwitch, key = "network.dv_wg_lockdown_switch", padding = NetworkInsets(10f, 10f, 10f, 10f), trailing = true)
                     )),
+                    NetworkNode(NetworkKind.DIVIDER, control = dividerRuleProxyLockdown, key = "network.divider_rule_proxy_lockdown", margin = NetworkInsets(56f, 5f, 16f, 5f), fillWidth = true),
+                    NetworkNode(NetworkKind.ROW, control = dvRuleProxyLockdownRl, key = "network.dv_rule_proxy_lockdown_rl", padding = NetworkInsets(0f, 15f, 0f, 15f), children = listOf(
+                        NetworkNode(NetworkKind.ICON, control = dvRuleProxyLockdownIcon, key = "network.dv_rule_proxy_lockdown_icon", margin = NetworkInsets(5f, 5f, 5f, 5f), padding = NetworkInsets(10f, 10f, 10f, 10f)),
+                        NetworkNode(NetworkKind.COLUMN, control = dvRuleProxyLockdownCol, flexible = true, children = listOf(
+                            NetworkNode(NetworkKind.TEXT, control = dvRuleProxyLockdownTxt, key = "network.dv_rule_proxy_lockdown_txt", appearance = R.style.TextAppearance_Material3_BodyLarge_Emphasized),
+                            NetworkNode(NetworkKind.TEXT, control = dvRuleProxyLockdownDesc, key = "network.dv_rule_proxy_lockdown_desc", appearance = R.style.TextAppearance_Material3_BodyMedium, padding = NetworkInsets(0f, 3f, 0f, 0f))
+                        )),
+                        NetworkNode(NetworkKind.SWITCH, control = dvRuleProxyLockdownSwitch, key = "network.dv_rule_proxy_lockdown_switch", padding = NetworkInsets(10f, 10f, 10f, 10f), trailing = true)
+                    )),
                     NetworkNode(NetworkKind.DIVIDER, control = dividerFloodWg, key = "network.divider_flood_wg", margin = NetworkInsets(56f, 5f, 16f, 5f), fillWidth = true),
                     NetworkNode(NetworkKind.ROW, control = dvFloodWgRl, key = "network.dv_flood_wg_rl", padding = NetworkInsets(0f, 15f, 0f, 15f), children = listOf(
                         NetworkNode(NetworkKind.ICON, control = dvFloodWgIcon, key = "network.dv_flood_wg_icon", margin = NetworkInsets(5f, 5f, 5f, 5f), padding = NetworkInsets(10f, 10f, 10f, 10f)),
@@ -460,6 +476,7 @@ class TunnelSettingsState(context: Context) {
         bundle.putBoolean("compose.TunnelSettingsState.dvWgAllowIncomingSwitch", dvWgAllowIncomingSwitch.isChecked)
         bundle.putBoolean("compose.TunnelSettingsState.dvWgLockdownSwitch", dvWgLockdownSwitch.isChecked)
         bundle.putBoolean("compose.TunnelSettingsState.dvFloodWgSwitch", dvFloodWgSwitch.isChecked)
+        bundle.putBoolean("compose.TunnelSettingsState.dvRuleProxyLockdownSwitch", dvRuleProxyLockdownSwitch.isChecked)
         bundle.putBoolean("compose.TunnelSettingsState.dvWgSmartPersistentKeepaliveSwitch", dvWgSmartPersistentKeepaliveSwitch.isChecked)
         bundle.putBoolean("compose.TunnelSettingsState.dvTcpKeepAliveSwitch", dvTcpKeepAliveSwitch.isChecked)
         bundle.putBoolean("compose.TunnelSettingsState.dvEimfSwitch", dvEimfSwitch.isChecked)
@@ -481,6 +498,7 @@ class TunnelSettingsState(context: Context) {
         if (bundle.containsKey("compose.TunnelSettingsState.dvWgAllowIncomingSwitch")) dvWgAllowIncomingSwitch.isChecked = bundle.getBoolean("compose.TunnelSettingsState.dvWgAllowIncomingSwitch")
         if (bundle.containsKey("compose.TunnelSettingsState.dvWgLockdownSwitch")) dvWgLockdownSwitch.isChecked = bundle.getBoolean("compose.TunnelSettingsState.dvWgLockdownSwitch")
         if (bundle.containsKey("compose.TunnelSettingsState.dvFloodWgSwitch")) dvFloodWgSwitch.isChecked = bundle.getBoolean("compose.TunnelSettingsState.dvFloodWgSwitch")
+        if (bundle.containsKey("compose.TunnelSettingsState.dvRuleProxyLockdownSwitch")) dvRuleProxyLockdownSwitch.isChecked = bundle.getBoolean("compose.TunnelSettingsState.dvRuleProxyLockdownSwitch")
         if (bundle.containsKey("compose.TunnelSettingsState.dvWgSmartPersistentKeepaliveSwitch")) dvWgSmartPersistentKeepaliveSwitch.isChecked = bundle.getBoolean("compose.TunnelSettingsState.dvWgSmartPersistentKeepaliveSwitch")
         if (bundle.containsKey("compose.TunnelSettingsState.dvTcpKeepAliveSwitch")) dvTcpKeepAliveSwitch.isChecked = bundle.getBoolean("compose.TunnelSettingsState.dvTcpKeepAliveSwitch")
         if (bundle.containsKey("compose.TunnelSettingsState.dvEimfSwitch")) dvEimfSwitch.isChecked = bundle.getBoolean("compose.TunnelSettingsState.dvEimfSwitch")
