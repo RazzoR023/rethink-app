@@ -2378,4 +2378,23 @@ class WireguardManagerTest : KoinTest {
             unmockkObject(ProxyManager)
         }
     }
+
+    @Test
+    fun `hasDns - true only for a config with a DNS line`() {
+        val withDns = mockk<WgInterface>(relaxed = true)
+        every { withDns.dnsServers } returns setOf(java.net.InetAddress.getByName("10.64.0.1"))
+        val noDns = mockk<WgInterface>(relaxed = true)
+        every { noDns.dnsServers } returns emptySet()
+
+        val c1 = setupMockConfig(id = 41, name = "Mullvad")
+        every { c1.getInterface() } returns withDns
+        val c2 = setupMockConfig(id = 42, name = "Work")
+        every { c2.getInterface() } returns noDns
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 41), c1)
+        addConfigToManager(createMockWgConfigFilesImmutable(id = 42), c2)
+
+        assertTrue(WireguardManager.hasDns(41))
+        assertFalse(WireguardManager.hasDns(42))
+        assertFalse(WireguardManager.hasDns(4242)) // unknown config
+    }
 }

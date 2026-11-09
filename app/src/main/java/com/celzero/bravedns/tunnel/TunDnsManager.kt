@@ -432,9 +432,10 @@ object TunDnsManager: KoinComponent {
                 fallbackTid
             } else {
                 val oneWgId = WireguardManager.getOneWireGuardProxyId()
-                if (oneWgId != null) {
+                if (oneWgId != null && WireguardManager.hasDns(oneWgId)) {
                     ID_WG_BASE + oneWgId
                 } else {
+                    // no wg, or a wg without a DNS line: default dns (sent via the proxy)
                     defaultTid
                 }
             }
@@ -454,8 +455,13 @@ object TunDnsManager: KoinComponent {
             }
             val oneWgId = WireguardManager.getOneWireGuardProxyId()
             if (oneWgId != null) {
-                logd("(onQuery)one wg found, returning ${ID_WG_BASE + oneWgId}")
-                return Pair(ID_WG_BASE + oneWgId, "")
+                if (WireguardManager.hasDns(oneWgId)) {
+                    logd("(onQuery)one wg found, returning ${ID_WG_BASE + oneWgId}")
+                    return Pair(ID_WG_BASE + oneWgId, "")
+                }
+                // no dns transport for this wg; default dns still goes via the wg (pidcsv)
+                logd("(onQuery)one wg ${ID_WG_BASE + oneWgId} has no dns, using $defaultTid")
+                return Pair(defaultTid, "")
             }
             if (!persistentState.splitDns) {
                 logd("(onQuery)no split dns, using $defaultTid")
@@ -467,7 +473,11 @@ object TunDnsManager: KoinComponent {
             val ssid = ssid ?: ""
             val rpnIds = if (RpnProxyManager.isRpnActive()) RpnProxyManager.getAllPossibleConfigIdsForApp(uid, ip = "", port = 0, domain, usesCellularNw, ssid) else emptyList()
             val defTid = if (rpnIds.isNotEmpty()) "" else defaultTid
-            val wgIds = WireguardManager.getAllPossibleConfigIdsForApp(uid, ip = "", port = 0, domain, usesCellularNw, ssid, defTid)
+            val allWgIds = WireguardManager.getAllPossibleConfigIdsForApp(uid, ip = "", port = 0, domain, usesCellularNw, ssid, defTid)
+            // firestack picks one of these ids at random and doesn't fall back, so a wg with no
+            // DNS line would fail the lookup; drop those and use the default dns instead
+            val wgIds = keepWgIdsWithDns(allWgIds, WireguardManager::hasDns)
+            val wgWithoutDns = wgIds.size != allWgIds.size
             val updatedRpnIds = rpnIds.map { if (it == Backend.Block) Backend.BlockAll else it }.distinct()
             val updatedWgIds = wgIds.map { if (it == Backend.Block) Backend.BlockAll else it }.distinct()
 
@@ -481,6 +491,11 @@ object TunDnsManager: KoinComponent {
                 } else if (combinedIds.isNotEmpty() && isAnyWgOrRpnDns(combinedIds)) {
                     logd("(onQuery-pid)wg/rpn ids($wgRpnIds) found for uid: $uid")
                     wgRpnIds
+                } else if (wgWithoutDns) {
+                    // the app is on a wg, so the default dns is sent through it (pidcsv), which
+                    // is also fine under proxy lockdown
+                    logd("(onQuery)wg ids($allWgIds) have no dns, return $defaultTid for uid: $uid")
+                    defaultTid
                 } else {
                     logd("(onQuery)no wg/rpn found, return $fallbackTid, global-proxy-lockdown? $globalProxyLockdown")
                     fallbackTid
@@ -707,6 +722,15 @@ object TunDnsManager: KoinComponent {
         }
     }
 
+
+    // drops "wg<N>" ids whose config has no DNS line; other ids (rpn, Preferred, Block) are kept
+    internal fun keepWgIdsWithDns(ids: List<String>, hasDns: (Int) -> Boolean): List<String> {
+        return ids.filter { id ->
+            if (!WireguardManager.isWgProxyId(id)) return@filter true
+            val n = id.substring(ID_WG_BASE.length).toIntOrNull() ?: return@filter true
+            hasDns(n)
+        }
+    }
 
     private fun isAnyWgOrRpnDns(tid: List<String>): Boolean {
         return tid.any { it.startsWith(ID_WG_BASE, ignoreCase = true) || it.startsWith(Backend.RpnWin, ignoreCase = true) }

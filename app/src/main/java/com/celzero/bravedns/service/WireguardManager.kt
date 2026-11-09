@@ -295,6 +295,12 @@ object WireguardManager : KoinComponent {
         return config
     }
 
+    // firestack registers a dns transport for a wg only from its DNS line (AddProxyDNS); without
+    // one there is no "wg<id>" transport and queries sent to it fail ("missing transport")
+    fun hasDns(id: Int): Boolean {
+        return configs.find { it.getId() == id }?.getInterface()?.dnsServers?.isNotEmpty() == true
+    }
+
     fun getConfigFilesById(id: Int): WgConfigFilesImmutable? {
         val config = mappings.find { it.id == id }
         if (config == null) {

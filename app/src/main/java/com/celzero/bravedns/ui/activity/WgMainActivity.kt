@@ -429,8 +429,13 @@ class WgMainActivity : BaseActivity(), WgListActions {
     /** "DNS forwarded to …": the Simple config, else the connected DNS (+ split-DNS configs). */
     private fun refreshDnsLine() {
         if (!::state.isInitialized) return
-        val active = WireguardManager.getActiveConfigs().map { it.getName() }
-        val target = WgListLogic.dnsTarget(WireguardManager.oneWireGuardEnabled(), active, connectedDns, persistentState.splitDns)
+        // a config without a DNS line answers no lookups; the connected DNS does (via the tunnel)
+        val active = WireguardManager.getActiveConfigs()
+            .filter { WireguardManager.hasDns(it.getId()) }
+            .map { it.getName() }
+        val oneWgWithDns = WireguardManager.oneWireGuardEnabled() &&
+            WireguardManager.getOneWireGuardProxyId()?.let { WireguardManager.hasDns(it) } == true
+        val target = WgListLogic.dnsTarget(oneWgWithDns, active, connectedDns, persistentState.splitDns)
         if (target != null) state.dnsTarget = target
     }
 

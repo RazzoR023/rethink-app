@@ -1068,4 +1068,23 @@ class TunDnsManagerTest {
     }
 
     // endregion
+
+    @Test
+    fun `keepWgIdsWithDns - drops wireguard ids without a DNS line`() {
+        val hasDns = setOf(1, 3)
+        val out = TunDnsManager.keepWgIdsWithDns(listOf("wg1", "wg2", "wg3")) { it in hasDns }
+        assertEquals(listOf("wg1", "wg3"), out)
+    }
+
+    @Test
+    fun `keepWgIdsWithDns - keeps non-wireguard ids`() {
+        val ids = listOf(Backend.RpnWin, Backend.Preferred, Backend.Block, "wg5")
+        val out = TunDnsManager.keepWgIdsWithDns(ids) { false }
+        assertEquals(listOf(Backend.RpnWin, Backend.Preferred, Backend.Block), out)
+    }
+
+    @Test
+    fun `keepWgIdsWithDns - all without DNS gives empty list`() {
+        assertTrue(TunDnsManager.keepWgIdsWithDns(listOf("wg1", "wg2")) { false }.isEmpty())
+    }
 }
