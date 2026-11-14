@@ -1,4 +1,61 @@
-## Rethink DNS + Firewall + VPN for Android
+## Rethink DNS + Firewall + VPN for Android — fork
+
+This is a personal fork of [celzero/rethink-app](https://github.com/celzero/rethink-app). It adds a redesigned interface, per-rule proxy routing, a custom SOCKS5 proxy that runs alongside WireGuard, a self-hosted Rethink DNS option, and a set of DNS fixes. The fork's work lives on the [`feat/ui`](https://github.com/RazzoR023/rethink-app/tree/feat/ui) branch; prebuilt APKs are on the [releases page](https://github.com/RazzoR023/rethink-app/releases).
+
+The fork's APK installs as **Rethink ui** (`com.celzero.bravedns.ui`), next to the official app rather than over it. It is signed with a development key, so it can't update an official install.
+
+<table>
+<tr>
+<td align="center"><img src="docs/fork-screenshots/01-home.jpg" width="180"><br><sub>Home</sub></td>
+<td align="center"><img src="docs/fork-screenshots/02-app-details.jpg" width="180"><br><sub>App details</sub></td>
+<td align="center"><img src="docs/fork-screenshots/03-app-proxy.jpg" width="180"><br><sub>Proxy per app</sub></td>
+<td align="center"><img src="docs/fork-screenshots/04-route-via.jpg" width="180"><br><sub>Rule with Route via</sub></td>
+<td align="center"><img src="docs/fork-screenshots/05-rules.jpg" width="180"><br><sub>IP and domain rules</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/fork-screenshots/06-wireguard.jpg" width="180"><br><sub>WireGuard</sub></td>
+<td align="center"><img src="docs/fork-screenshots/07-wireguard-config.jpg" width="180"><br><sub>WireGuard config</sub></td>
+<td align="center"><img src="docs/fork-screenshots/08-socks5.jpg" width="180"><br><sub>SOCKS5 proxy</sub></td>
+<td align="center"><img src="docs/fork-screenshots/09-dark-home.jpg" width="180"><br><sub>AMOLED dark</sub></td>
+<td align="center"><img src="docs/fork-screenshots/10-dark-app-details.jpg" width="180"><br><sub>App details, dark</sub></td>
+</tr>
+</table>
+
+### What the fork adds
+
+**New interface**
+- Built on the Compose port of the app ([celzero/rethink-app#3196](https://github.com/celzero/rethink-app/pull/3196)), then redesigned screen by screen on a Material 3 design system.
+- Two themes: Light and AMOLED black, or follow the system setting.
+- App details screen rebuilt: one firewall mode picker, Wi-Fi and mobile data toggles, a summary of what the app is allowed to do, and the proxy the app uses.
+- Custom IP and domain rules page rebuilt, with a rule details sheet.
+- WireGuard list redone, with a relay picker sheet instead of the old hop dialogs, and a clear "DNS forwarded to …" line.
+- One shared layout for every proxy page (WireGuard, SOCKS5, HTTP, Orbot): an enable switch, a status chip, the apps using the proxy, and the IP and domain rules routed through it.
+- A shared app picker that moves an app from one proxy to another.
+- Smoother scrolling in the network and DNS logs.
+
+**Proxies**
+- Route via: send a single domain, IP, or IP:port through a chosen proxy. Set it on the rules page or straight from a connection in the logs.
+- One proxy per app: picking a proxy for an app moves it off any other.
+- Custom SOCKS5 proxy that runs alongside WireGuard, per app, with simple and advanced modes and live connection timers.
+- "Proxy rules in lockdown" (off by default): with Proxy Lockdown on, Route via rules are honoured instead of ignored.
+
+**DNS**
+- Self-hosted Rethink DNS: point the app at your own [serverless-dns](https://github.com/serverless-dns/serverless-dns) deployment, with an optional access secret. Named paths such as `/rec` and `/sec` work as on the official server.
+- The DNS server picker shows, and keeps, the server you actually picked.
+
+**Fixes**
+- On-device blocklists were skipped for lookups the app couldn't attribute to an app.
+- The "exclude Rethink from the tunnel" fix marked the wrong app.
+- The Hybrid anti-censorship mode was never passed to the tunnel.
+- Lookups failed through a WireGuard tunnel whose config had no DNS line; they now go to the connected DNS server.
+- In DNS-only mode, wildcard domain rules (`*.example.com`) and per-app "bypass DNS & firewall" were ignored.
+- DNS "Restore defaults" missed the captive-portal setting and picked a different server than a new install gets.
+- Every update reset the in-app downloader setting and re-ran an old Smart DNS migration.
+- Resetting a Rethink Plus server's DNS filters showed Privacy as on while no filters were applied.
+
+---
+
+The upstream README follows.
 
 A multi-hop [WireGuard](https://github.com/wireguard/wireguard-go) client, an [OpenSnitch](https://github.com/evilsocket/opensnitch)-inspired firewall and network monitor + a [pi-hole](https://github.com/pi-hole/pi-hole)-inspired DNS over HTTPS (DoH), Oblivious DoH, DNS over TLS (DoT), DNSCrypt client with blocklists.
 
