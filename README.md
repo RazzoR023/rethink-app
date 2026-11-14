@@ -1,3 +1,6 @@
+> [!WARNING]
+> **This is a vibe-coded hobby fork, not a serious one.** It's a personal project, built mostly with Claude in spare time on leftover usage limits. It is not affiliated with or endorsed by Celzero, and it is not a replacement for or a successor to [celzero/rethink-app](https://github.com/celzero/rethink-app). Expect rough edges and bugs, and don't rely on it for anything important. For a dependable app, use the [official Rethink DNS + Firewall + VPN](https://github.com/celzero/rethink-app). Please don't report this fork's issues upstream.
+
 ## Rethink DNS + Firewall + VPN for Android — fork
 
 This is a personal fork of [celzero/rethink-app](https://github.com/celzero/rethink-app). It adds a redesigned interface, per-rule proxy routing, a custom SOCKS5 proxy that runs alongside WireGuard, a self-hosted Rethink DNS option, and a set of DNS fixes. The fork's work lives on the [`feat/ui`](https://github.com/RazzoR023/rethink-app/tree/feat/ui) branch; prebuilt APKs are on the [releases page](https://github.com/RazzoR023/rethink-app/releases).
