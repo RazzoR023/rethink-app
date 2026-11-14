@@ -202,7 +202,7 @@ private fun RulesTopBar(state: RulesScreenState, actions: CustomRuleActions, hos
             Column {
                 Text(stringResource(R.string.rules_title), Modifier.semantics { heading() }, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    scopeLabel(state),
+                    scopeLabel(state, actions),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -243,12 +243,12 @@ private fun RulesTopBar(state: RulesScreenState, actions: CustomRuleActions, hos
 }
 
 @Composable
-private fun scopeLabel(state: RulesScreenState): String {
+private fun scopeLabel(state: RulesScreenState, actions: CustomRuleActions): String {
     val scope = state.scope
     return when {
         scope.allApps -> stringResource(R.string.rules_scope_app_rules)
         scope.isUniversal -> stringResource(R.string.rules_scope_all_apps)
-        else -> appLabel(state, actions = null, uid = scope.uid)
+        else -> appLabel(state, actions, uid = scope.uid)
     }
 }
 
@@ -257,8 +257,11 @@ private fun scopeLabel(state: RulesScreenState): String {
 internal fun appLabel(state: RulesScreenState, actions: CustomRuleActions?, uid: Int): String {
     if (uid == UID_EVERYBODY) return stringResource(R.string.rules_scope_all_apps)
     LaunchedEffect(uid) { actions?.loadAppName(uid) }
-    val name = state.appNames[uid]
-    return if (name.isNullOrEmpty()) stringResource(R.string.rules_unknown_app, uid) else name
+    return when (val name = state.appNames[uid]) {
+        null -> "" // still loading; blank beats a flash of "Unknown app"
+        "" -> stringResource(R.string.rules_unknown_app, uid)
+        else -> name
+    }
 }
 
 @Composable

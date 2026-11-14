@@ -84,7 +84,10 @@ internal class FakePort : CustomRulePort {
     override suspend fun deleteDomainsByUid(uid: Int) { calls += "deleteDomainsByUid:$uid"; domains.keys.removeAll { it.first == uid } }
     override suspend fun deleteAllAppDomains() { calls += "deleteAllAppDomains"; domains.keys.removeAll { it.first != UID_EVERYBODY } }
 
-    override suspend fun appName(uid: Int) = "App $uid"
+    /** a uid with no installed app */
+    val missingUid = 99999
+
+    override suspend fun appName(uid: Int) = if (uid == missingUid) null else "App $uid"
     override suspend fun proxies() = listOf(
         ProxyChoices.Choice("wg1", ProxyChoices.Kind.WIREGUARD, "wg-one", enabled = true, health = ProxyChoices.Health.UP),
     )

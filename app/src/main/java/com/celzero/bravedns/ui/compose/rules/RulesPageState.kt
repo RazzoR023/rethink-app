@@ -81,8 +81,8 @@ class RulesScreenState(
     /** every proxy with its live status; null until loaded */
     var proxies by mutableStateOf<List<ProxyChoices.Choice>?>(null)
 
-    /** app name per uid, loaded on demand */
-    val appNames = mutableStateMapOf<Int, String>()
+    /** app name per uid, loaded on demand: null while loading, "" when no app has that uid */
+    val appNames = mutableStateMapOf<Int, String?>()
 
     fun openEditor(kind: RuleKind, item: RuleItem? = null) {
         dialog = RulesDialog.Editor(RuleDraft(kind, item?.uid ?: scope.uid, item))

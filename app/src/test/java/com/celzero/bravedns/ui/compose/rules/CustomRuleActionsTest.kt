@@ -225,4 +225,13 @@ class CustomRuleActionsTest {
         a.loadAppName(app)
         assertEquals("App $app", s.appNames[app])
     }
+
+    @Test fun appName_unknownUidIsEmptyNotLoading() {
+        val s = stateFor()
+        val a = actions(s)
+        a.loadAppName(port.missingUid)
+        // "" = looked up, no such app (shown as "Unknown app"); null would mean still loading
+        assertTrue(s.appNames.containsKey(port.missingUid))
+        assertEquals("", s.appNames[port.missingUid])
+    }
 }

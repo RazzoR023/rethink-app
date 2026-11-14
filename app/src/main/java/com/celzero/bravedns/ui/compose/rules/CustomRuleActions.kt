@@ -192,7 +192,7 @@ internal class CustomRuleActions(
 
     fun loadAppName(uid: Int) {
         if (state.appNames.containsKey(uid)) return
-        state.appNames[uid] = "" // in flight
+        state.appNames[uid] = null // in flight
         scope.launch(mainDispatcher) {
             val name = withContext(ioDispatcher) { port.appName(uid) }
             state.appNames[uid] = name.orEmpty()
